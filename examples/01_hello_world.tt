@@ -1,0 +1,4 @@
+// Example 1: Hello World
+fn main() {
+    print("Hello, Time-T!")
+}

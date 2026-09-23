@@ -1,0 +1,33 @@
+// Example 5: Linear regression, y = 2x + 1, trained with manual gradient
+// descent expressed directly in Time-T using tensors + autodiff.
+// (The nn/optim convenience layer exists only as a Python API today --
+// see docs/ROADMAP.md Milestone 7 -- so this example uses raw tensor ops,
+// which are part of the language today.)
+fn main() {
+    let x = tensor([-2.0, -1.0, 0.0, 1.0, 2.0, 3.0])
+    let y = tensor([-3.0, -1.0, 1.0, 3.0, 5.0, 7.0])
+
+    var w = tensor([0.0], grad=true)
+    var b = tensor([0.0], grad=true)
+
+    var step = 0
+    while step < 200 {
+        let pred = x * w + b
+        let diff = pred - y
+        let loss = mean(diff * diff)
+
+        loss.backward()
+
+        no_grad {
+            w.sub_(w.grad * 0.05)
+            b.sub_(b.grad * 0.05)
+        }
+        w.zero_grad()
+        b.zero_grad()
+
+        step = step + 1
+    }
+
+    print(w)
+    print(b)
+}

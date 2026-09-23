@@ -1,0 +1,2 @@
+Tensor([2.000000238418579], requires_grad=True)
+Tensor([0.9999996423721313], requires_grad=True)

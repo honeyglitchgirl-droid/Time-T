@@ -1,0 +1,42 @@
+{
+  "timestamp": "2026-09-23T12:53:37Z",
+  "platform": {
+    "processor": "",
+    "machine": "x86_64",
+    "system": "Linux",
+    "python_version": "3.11.2",
+    "numpy_version": "2.4.6"
+  },
+  "benchmarks": [
+    {
+      "name": "scalar_add_loop",
+      "seconds": 0.010349011000016617,
+      "note": "n=200000 python scalar adds"
+    },
+    {
+      "name": "tensor_vector_add",
+      "seconds": 0.0006072549999771581,
+      "note": "n=1000000 f32 elementwise add"
+    },
+    {
+      "name": "matmul_64x64",
+      "seconds": 1.5436000012414297e-05,
+      "note": "~33.97 GFLOP/s (naive estimate)"
+    },
+    {
+      "name": "matmul_256x256",
+      "seconds": 0.0003531190000103379,
+      "note": "~95.02 GFLOP/s (naive estimate)"
+    },
+    {
+      "name": "tensor_sum_reduction",
+      "seconds": 0.00045310700011214067,
+      "note": "n=1000000"
+    },
+    {
+      "name": "autodiff_backward_sum_square",
+      "seconds": 0.0006784199999856355,
+      "note": "n=100000"
+    }
+  ]
+}
