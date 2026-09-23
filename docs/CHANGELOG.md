@@ -4,6 +4,35 @@ All notable changes to Time-T are recorded here. Format loosely follows
 Keep a Changelog; versioning follows master prompt §37 (targets, not
 promises).
 
+## [0.3.0] — 2026-09-23 (Milestone 2 complete: module system)
+
+**Modules land (DD-13).** `import a.b.c [as alias]` — resolves to
+`<importer's dir>/a/b/c.tt`, load/typecheck/exec ONCE per canonical path,
+fresh module scope (importer bindings provably invisible), and `fn main`
+in a module is an ordinary export — NOT auto-run. Typed
+exports across the boundary (E0211 lists real exports on unknown members);
+E0210 import cycles, E0212 nested imports, E0213 missing files (message
+includes the searched path), E0214 non-constant import path. Modules
+flatten into the IR as prefixed functions plus an `__init__<dotted>` fn the
+executor runs at-most-once in the main frame — AST / IR-O0 / IR-O1 remain
+byte-identical (13 new differential tests + example `08_modules.tt`).
+
+Clarified docs: parameters without type annotations are `<unknown>` and
+arithmetic on `<unknown>` is a static E0204 (pre-existing rule, now
+explicitly documented since modules made it visible).
+
+Optimizer hardening (found & fixed by new differential tests): CSE now
+rewrites call/marker args of an eliminated temp (two real bugs -- a
+dangling `return %tN`, and `call:` args referencing a nop'd def -- both
+pinned by regression tests, plus a corpus-wide no-dangling-temp invariant
+scan). This is why DD-14 exists: correctness by differential evidence.
+
+Suite: 318 tests (was 247 at v0.2.0). New: modules (12), parser+/typechecker
+imports (+2), expanded engine-differential (10 -> 59: 8 example runs, 9
+feature snippets, 88 generated programs), optimizer regression+invariant
+tests (13 -> 18). All example `.expected` files verified against their
+actual engine outputs. No performance numbers changed in this one.
+
 ## [0.2.0] - Milestone 6 complete (IR execution + optimization), Milestones 7-8 expanded
 
 ### Added

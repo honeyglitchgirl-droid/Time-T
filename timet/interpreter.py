@@ -14,6 +14,7 @@ from timet import tensor as T
 from timet import train as train_lib
 from timet.autodiff import no_grad
 from timet.diagnostics import Diagnostic, SourceSpan
+from timet.modules import ModuleLoader, ModuleError, ModuleValue
 
 #: Module objects pre-bound in every program's global scope (DD-10). They
 #: are ordinary values, so `nn.Linear(2, 8)` is a field access + call.
@@ -79,11 +80,14 @@ class Environment:
 
 
 class Interpreter:
-    def __init__(self, stdout_write=None):
+    def __init__(self, stdout_write=None, loader: Optional[ModuleLoader] = None,
+                 importer_path: str = "<input>"):
         self.globals = Environment()
         for name, value in ENGINE_GLOBALS.items():
             self.globals.define(name, value)
         self._stdout_write = stdout_write or (lambda s: print(s))
+        self._loader = loader or ModuleLoader()
+        self._importer_path = importer_path
 
     def run(self, program: A.Program):
         for stmt in program.statements:
@@ -101,6 +105,9 @@ class Interpreter:
         return result
 
     def exec_stmt(self, stmt: A.Stmt, env: Environment):
+        if isinstance(stmt, A.ImportStmt):
+            self._exec_import(stmt, env)
+            return None
         if isinstance(stmt, A.LetStmt):
             value = self.eval(stmt.value, env)
             env.define(stmt.name, value)
@@ -153,6 +160,32 @@ class Interpreter:
             span=SourceSpan(stmt.line, stmt.col),
             stage="interpreter",
         )
+
+    def _exec_import(self, stmt: A.ImportStmt, env: Environment):
+        """Execute a module once per loader (Python-like), in a FRESH global
+        scope (engine builtins only), then bind a ModuleValue. `fn main` in a
+        module is not auto-invoked."""
+        mod = self._loader.load(stmt.path, self._importer_path,
+                                SourceSpan(stmt.line, stmt.col))
+        if mod.value is None:
+            if mod.initializing:
+                raise ModuleError(
+                    code="E0210",
+                    message=f"import cycle involving module '{mod.dotted}'",
+                    span=SourceSpan(stmt.line, stmt.col),
+                    stage="modules",
+                )
+            mod.initializing = True
+            try:
+                mod_env = Environment()
+                for name, value in ENGINE_GLOBALS.items():
+                    mod_env.define(name, value)
+                for mst in mod.program.statements:
+                    self.exec_stmt(mst, mod_env)
+                mod.value = ModuleValue(mod.dotted, mod_env.vars)
+            finally:
+                mod.initializing = False
+        env.define(stmt.binding, mod.value)
 
     def call_function(self, fn: Function, args: List[Any], kwargs: Dict[str, Any], span: SourceSpan):
         inner = fn.closure.child()
@@ -311,6 +344,27 @@ class Interpreter:
         recv = self.eval(expr.receiver, env)
         args = [self.eval(a, env) for a in expr.args]
         kwargs = {k: self.eval(v, env) for k, v in expr.kwargs.items()}
+        # module.fn(...): module member may be a Time-T Function
+        if isinstance(recv, ModuleValue):
+            if not hasattr(recv, expr.method):
+                raise RuntimeErr(
+                    code="E0505",
+                    message=f"module '{recv._dotted}' has no member '{expr.method}'",
+                    span=SourceSpan(expr.line, expr.col),
+                    stage="interpreter",
+                )
+            member = getattr(recv, expr.method)
+            if isinstance(member, Function):
+                return self.call_function(member, args, kwargs,
+                                          SourceSpan(expr.line, expr.col))
+            if callable(member):
+                return member(*args, **kwargs)
+            raise RuntimeErr(
+                code="E0503",
+                message=f"module member '{expr.method}' is not callable",
+                span=SourceSpan(expr.line, expr.col),
+                stage="interpreter",
+            )
         method = getattr(recv, expr.method, None)
         if method is None:
             raise RuntimeErr(
@@ -368,12 +422,15 @@ def _stringify(value) -> str:
     return str(value)
 
 
-def run_source(source: str, filename: str = "<input>", stdout_write=None):
+def run_source(source: str, filename: str = "<input>", stdout_write=None,
+               loader: Optional[ModuleLoader] = None):
     from timet.parser import parse
     from timet.typechecker import check
 
+    loader = loader or ModuleLoader()
     program = parse(source, filename)
-    check(program)
-    interp = Interpreter(stdout_write=stdout_write)
+    check(program, filename=filename, loader=loader)
+    interp = Interpreter(stdout_write=stdout_write, loader=loader,
+                         importer_path=filename)
     interp.run(program)
     return interp

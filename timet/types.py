@@ -77,6 +77,26 @@ class TUnknown(Type):
         return "<unknown>"
 
 
+@dataclass(frozen=True)
+class TModule(Type):
+    """An imported module, typed by the map of its exported names.
+
+    Equality is by identity VALUE of the frozen exports map — two TModule
+    instances for the same loaded module are equal because the type checker
+    fills the exports deterministically from the same source."""
+    dotted: str
+    exports: Tuple[Tuple[str, Type], ...]
+
+    def member(self, name: str) -> Optional[Type]:
+        for k, v in self.exports:
+            if k == name:
+                return v
+        return None
+
+    def __str__(self):
+        return f"module {self.dotted}"
+
+
 PRIMITIVE_NAMES = {
     "Int": TInt(),
     "Float": TFloat(),

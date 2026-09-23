@@ -1,0 +1,15 @@
+// Example 8: the module system (Milestone 2).
+// `import modules.linalg` resolves to examples/modules/linalg.tt, typed
+// statically across the boundary (E0211 on unknown members) and executed
+// identically by the AST interpreter and the IR executor.
+import modules.linalg
+import modules.consts as consts
+
+fn main() {
+    let a = [1.0, 2.0, 3.0]
+    let b = [4.0, 5.0, 6.0]
+    print(linalg.dot(a, b))
+    print(linalg.scale(a, consts.SCALE))
+    print(linalg.twice(consts.SCALE))
+    print(consts.APP_NAME)
+}

@@ -123,3 +123,90 @@ def test_O0_is_a_no_op():
     before = tir.to_json()
     optimize_program(tir, level=0)
     assert tir.to_json() == before
+
+
+# ---------------- regression: the dangling-return-arg bug ----------------
+
+def test_cse_rewrites_marker_args_of_eliminated_temps():
+    """Regression (found by differential testing): an eliminated def whose
+    ONLY later use was a control marker (return) must still be rewritten;
+    leaving `return %tN` referencing a nop'd def is a hard executor error."""
+    src = """fn f() -> Int {
+        let a = 5
+        let b = a
+        let c = 6
+        let d = 6
+        return c
+    }"""
+    tir, _ = opt(src)
+    f = {fn.name: fn for fn in tir.functions}["f"]
+    defined = {i.result for i in f.instrs if i.result}
+    for ins in f.instrs:
+        for a in ins.args:
+            if a.startswith("%"):
+                assert a in defined, f"dangling temp {a} in {ins}"
+
+
+def test_cse_rewrites_call_args_of_eliminated_temps():
+    """Regression (found on 02_calculator): duplicate consts merged by CSE
+    must rewrite call: args, not just other pure ops."""
+    src = """
+    fn mul(a: Int, b: Int) -> Int { return a * b }
+    fn main() {
+        print(mul(6, 7))
+        print(mul(6, 7))
+    }
+    """
+    tir, _ = opt(src)
+    f = {fn.name: fn for fn in tir.functions}["main"]
+    defined = {i.result for i in f.instrs if i.result}
+    for ins in f.instrs:
+        for a in ins.args:
+            if a.startswith("%"):
+                assert a in defined, f"dangling temp {a} in ins {ins}"
+
+
+def test_cse_never_crosses_control_markers():
+    """An expression computed before an if-block must not be merged with the
+    same expression inside the block's then-branch."""
+    src = """fn f(x: Int) -> Int {
+        let a = x * 2
+        if x > 0 {
+            let b = x * 2
+            return b
+        }
+        return a
+    }"""
+    tir, _ = opt(src)
+    f = {fn.name: fn for fn in tir.functions}["f"]
+    muls = [i for i in f.instrs if i.op == "mul"]
+    assert len(muls) == 2, f"CSE must not cross if_begin/if_end, got {len(muls)} muls"
+
+
+def test_mod_by_zero_not_folded_either():
+    tir, _ = opt("fn f() -> Int { return 7 % 0 }")
+    assert "mod" in ops(tir)
+
+
+# ---------------- whole-corpus invariant: no dangling temps, ever ----------------
+
+def test_optimized_examples_have_no_dangling_temp_uses():
+    """For every example program, after O1: every %-temp used by any instr
+    (including control markers and calls) is defined in the same function.
+    This invariant would have caught both historical optimizer bugs."""
+    import pathlib
+    from timet.modules import ModuleLoader
+    for path in sorted(pathlib.Path("examples").glob("*.tt")):
+        src = path.read_text()
+        loader = ModuleLoader()
+        tir = lower_program(check(parse(src, str(path)), filename=str(path),
+                                  loader=loader),
+                            loader=loader, importer_path=str(path))
+        tir, _ = optimize_program(tir, level=1)
+        for fn in tir.functions:
+            defined = {i.result for i in fn.instrs if i.result} | set(fn.params)
+            for ins in fn.instrs:
+                for arg in ins.args:
+                    if arg.startswith("%"):
+                        assert arg in defined, \
+                            f"{path.name}:{fn.name}: dangling {arg} in {ins}"

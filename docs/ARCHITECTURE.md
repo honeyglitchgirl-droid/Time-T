@@ -57,8 +57,11 @@ timet/
   types.py           TimeT type system (TInt, TFloat, TBool, TString,
                      TTensor, TFunction, TUnit, TOption, ...)
   typechecker.py     scope/env, type inference & checking, TypeError diag
+  modules.py         ModuleLoader: file resolution, parse caching, cycle
+                     detection; ModuleValue: the runtime module object (DD-13)
   ir.py              typed IR (TirProgram, TirFunction, TirInstr, ...),
-                     lowering pass, JSON (de)serialization
+                     lowering pass incl. MODULE FLATTENING (mangled names +
+                     once-only __init__<dotted> fns; DD-13), JSON round-trip
   interpreter.py     tree-walking evaluator, Environment, control flow
   tensor.py          Tensor class (wraps numpy.ndarray), autodiff tape hooks,
                      broadcasting, core ops (add/sub/mul/div/matmul/reshape/

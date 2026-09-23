@@ -92,3 +92,20 @@ def test_inspect_ir_opt_json_has_stats():
     assert payload["status"] == "ok"
     assert "opt_stats" in payload
     assert payload["opt_stats"]["instrs_after"] <= payload["opt_stats"]["instrs_before"]
+
+
+def test_modules_example_runs_via_cli():
+    proc = run_cli("run", "examples/08_modules.tt", "--json")
+    payload = json.loads(proc.stdout)
+    assert payload["status"] == "ok"
+    assert payload["stdout"][0] == "32.0"
+    assert payload["stdout"][3] == "time-t-modules"
+
+
+def test_cli_reports_missing_module_as_diagnostic(tmp_path):
+    bad = tmp_path / "bad.tt"
+    bad.write_text("import nope_module\nfn main() { print(1) }\n")
+    proc = run_cli("check", str(bad), "--json")
+    payload = json.loads(proc.stdout)
+    assert payload["status"] == "error"
+    assert payload["results"][0]["diagnostic"]["code"] == "E0213"

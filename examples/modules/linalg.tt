@@ -1,0 +1,21 @@
+// Module: tiny vector helpers used by examples/08_modules.tt.
+// Resolves because `import modules.linalg` maps to
+// <importer's dir>/modules/linalg.tt.
+
+fn dot(a: Tensor[f32], b: Tensor[f32]) -> Float {
+    var total = 0.0
+    var i = 0
+    while i < len(a) {
+        total = total + a[i].item() * b[i].item()
+        i = i + 1
+    }
+    return total
+}
+
+fn scale(a: Tensor[f32], s: Float) -> Tensor[f32] {
+    return a * s
+}
+
+fn twice(x: Float) -> Float {
+    return x + x
+}

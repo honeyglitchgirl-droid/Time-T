@@ -189,6 +189,19 @@ class FnDecl(Stmt):
 
 
 @dataclass
+class ImportStmt(Stmt):
+    """`import a.b.c` (dotted path -> `<dir>/a/b/c.tt`) with optional
+    `as alias`. Bound name is `alias` or the last path component.
+    Top-level only (enforced by the type checker, E0212)."""
+    path: List[str]
+    alias: Optional[str]
+
+    @property
+    def binding(self) -> str:
+        return self.alias or self.path[-1]
+
+
+@dataclass
 class Block(Node):
     statements: List[Stmt]
 

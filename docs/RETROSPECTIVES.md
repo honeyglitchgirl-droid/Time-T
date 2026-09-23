@@ -135,3 +135,73 @@ the optimizer work began only after the IR itself became executable.)
     incl. a fit()-to-100%-accuracy integration test); and the CLI
     end-to-end checks (`--via-ir` vs AST `run` outputs compared in
     `tests/test_cli.py`).
+
+---
+
+# Entry 3 — v0.3.0, closing the Milestone 2 remainder (modules; DD-13)
+
+1. **What works?** The module system: `import a.b.c [as alias]` resolves
+   relative-to-importer; imports are load-once (top-level prints run
+   exactly once, proven when one module is imported through two paths);
+   modules type-check in a fresh scope (importer's `let`s provably do NOT
+   leak in — compile error tested); exports are typed for real
+   (`mathlib.add(1,2)` is static-checked against `Int, Int -> Int`;
+   unknown members are E0211 *listing the actual exports*); cycles are
+   E0210, missing files E0213 with the looked-for path. Everything runs
+   byte-identically on AST, IR-O0 and IR-O1 (modules flatten into the IR
+   as prefixed functions + once-only `__init__<mod>` — DD-13).
+2. **What does not work / doesn't exist?** Packages with `__init__`,
+   `from x import y`, wildcard imports, relative `./`-imports, visibility
+   modifiers, module-level metadata/docstrings; higher-order use of module
+   functions in IR (clear DD-9 error, not silent failure); loading modules
+   from a search path plus standard-library modules written in Time-T
+   (`nn`/`optim`/`train` are still DD-10 pre-bound globals, NOT `import`-able
+   .tt files — a deliberate migration question, not an oversight).
+3. **What is untested?** Module resolution across symlinked/aliased
+   directory layouts (canonical-path cache would treat symlink target and
+   link as one module — desired — but no test pins it); import behavior
+   from REPL in a non-project cwd (CWD-relative — documented, fuzz-ish
+   edge not pinned); module combined with `--via-ir` + `-O1` on programs
+   with heavy module-state mutation (basic mutation IS tested: the counter
+   bump test).
+4. **What is slow?** Nothing NEW on named axes; module init adds one
+   synthetic-call indirection per import point in the IR — drown-out in
+   interpreter overhead. `benchmarks/` untouched: no perf claim changed.
+5. **What consumes excessive memory?** Unchanged. Module ASTs and
+   ModuleValue environments stay alive for the whole run (normal import
+   caching; no eviction exists — fine at current program scale, would need
+   revisiting for REPL sessions importing thousands of files).
+6. **What architectural debt exists?** The built-in `nn`/`optim`/`train`
+   globals should eventually be Time-T source modules under a stdlib path
+   so that imports and builtins share ONE mechanism — the current split
+   (TModule-for-files + TModule-for-prebound-globals) is deliberate
+   plumbing, not a final design; the type checker re-parses nothing but
+   re-CHECKS module bodies when importers change mid-chain — cheap at
+   current scale because of the per-path cache flags; `ir.py`'s
+   `_Lowerer` is growing parameters (prefix/storage_prefix/module maps) —
+   a small config object is due if one more axis lands.
+7. **What assumptions may be wrong?** That import-once *module-level
+   mutable state* (Python-style) is the right semantics for an ML language
+   — PyTorch's own module-state pitfalls suggest it deserves a design
+   note if/when tensors-in-module-state appear at scale; that flattening
+   modules into single-program IR stays viable when native codegen (M9)
+   arrives — a linkage/unit model may be needed then (DD-13 leaves the
+   door open; flattening keeps O0 verification exact).
+8. **What should be redesigned before continuing?** Nothing blocking. If
+   the NEXT milestone remainder (M6b: CFG-form IR + inlining) begins,
+   re-visit the `__init__<mod>` call markers — CFG form wants them as real
+   call sites with interprocedural rules, not string-name conventions.
+9. **What should NOT be implemented yet?** Package management, stdlib
+   written in Time-T (the modules machinery is fresh — dogfood it via
+   examples first), module visibility/encapsulation (needs the
+   struct/enum data-model decisions it will probably interact with),
+   search-path resolution (invites dependency-hell without a package
+   manager to govern it).
+10. **What evidence supports current claims?** `pytest -q` = 318 passing:
+    `tests/test_modules.py` (13 tests incl. the fresh-scope-negative test,
+    once-only-init test via `print` emission, cycle/missing/nested/unknown-export
+    error codes, and a 3-engine differential for every behavioral test);
+    example `08_modules.tt` (with `examples/modules/linalg.tt` +
+    `consts.tt`) runs through AST/IR-O0/IR-O1 byte-identically and through
+    the CLI (`examples` differential suite auto-picks it up); CLI
+    diagnostics for E0213 verified in `tests/test_cli.py` (now 14).

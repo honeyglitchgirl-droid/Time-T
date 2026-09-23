@@ -177,7 +177,12 @@ def algebraic(fn: TirFunction, stats: OptStats) -> None:
 # ---------------- pass 3: common subexpression elimination ----------------
 
 def _segments(instrs: List[TirInstr]):
-    """Yield (start, end) index ranges of marker-free straight-line runs."""
+    """Yield (start, end) index ranges of marker-free straight-line runs.
+
+    NOTE: markers keep their args; passes must rewrite marker args with the
+    replace table of the segment they TERMINATE before resetting it, or a
+    use like `return %t8` dangles when %t8's def was eliminated (this bit
+    us; d60a097-era CSE dropped return args)."""
     i = 0
     n = len(instrs)
     while i < n:
@@ -193,28 +198,29 @@ def _segments(instrs: List[TirInstr]):
 
 def cse(fn: TirFunction, stats: OptStats) -> None:
     instrs = fn.instrs
-    for lo, hi in _segments(instrs):
-        table: Dict[tuple, str] = {}
-        replace: Dict[str, str] = {}
-        for k in range(lo, hi):
-            ins = instrs[k]
-            # rewrite args of EVERY instruction (calls included): a later
-            # use of an eliminated temp must point at the surviving def.
-            ins.args = [replace.get(a, a) for a in ins.args]
-            if ins.op in ("store", "var_def"):
-                for key in [key for key in table
-                            if key[0] == "load" and key[1] == (ins.result,)]:
-                    del table[key]
-                continue
-            if ins.op not in _CSE_OPS or ins.result is None:
-                continue
-            key = (ins.op, tuple(ins.args))
-            if key in table:
-                replace[ins.result] = table[key]
-                ins.op = "nop"
-                stats.add("cse.eliminated")
-            else:
-                table[key] = ins.result
+    table: Dict[tuple, str] = {}
+    replace: Dict[str, str] = {}
+    for ins in instrs:
+        ins.args = [replace.get(a, a) for a in ins.args]
+        if ins.op in _MARKERS:
+            # marker args were rewritten above; the segment ends here
+            table.clear()
+            replace.clear()
+            continue
+        if ins.op in ("store", "var_def"):
+            for key in [key for key in table
+                        if key[0] == "load" and key[1] == (ins.result,)]:
+                del table[key]
+            continue
+        if ins.op not in _CSE_OPS or ins.result is None:
+            continue
+        key = (ins.op, tuple(ins.args))
+        if key in table:
+            replace[ins.result] = table[key]
+            ins.op = "nop"
+            stats.add("cse.eliminated")
+        else:
+            table[key] = ins.result
     fn.instrs = [i for i in fn.instrs if i.op != "nop"]
 
 
@@ -222,14 +228,15 @@ def cse(fn: TirFunction, stats: OptStats) -> None:
 
 def copy_prop(fn: TirFunction, stats: OptStats) -> None:
     instrs = fn.instrs
-    for lo, hi in _segments(instrs):
-        aliases: Dict[str, str] = {}
-        for k in range(lo, hi):
-            ins = instrs[k]
-            ins.args = [aliases.get(a, a) for a in ins.args]
-            if ins.op == "copy" and ins.result is not None:
-                aliases[ins.result] = ins.args[0]
-                stats.add("copy_prop.propagated")
+    aliases: Dict[str, str] = {}
+    for ins in instrs:
+        ins.args = [aliases.get(a, a) for a in ins.args]
+        if ins.op in _MARKERS:
+            aliases.clear()
+            continue
+        if ins.op == "copy" and ins.result is not None:
+            aliases[ins.result] = ins.args[0]
+            stats.add("copy_prop.propagated")
 
 
 # ---------------- pass 5: dead code elimination ----------------

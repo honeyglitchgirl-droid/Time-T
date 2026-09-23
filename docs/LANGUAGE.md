@@ -148,6 +148,44 @@ system (Milestone 2 remainder) exists — it is NOT a module system.
 Worked example: `examples/07_xor_classifier.tt` (trains an MLP with Adam to
 100% XOR accuracy; identical output under AST, IR-O0, IR-O1 engines).
 
+## 9b. Modules (v0.3.0, DD-13)
+
+```
+// file: modules/linalg.tt
+fn dot(a: Tensor[f32], b: Tensor[f32]) -> Float { ... }
+let SCALE = 2.0
+
+// file: main.tt
+import modules.linalg          // resolves modules/linalg.tt next to main.tt
+import modules.consts as consts // aliased import
+
+fn main() {
+    print(linalg.dot([1.0, 2.0], [3.0, 4.0]))
+    print(consts.SCALE)
+}
+```
+
+Rules (all enforced by tests in `tests/test_modules.py`):
+- Resolution is relative to the IMPORTING file's directory (or the current
+  working directory for REPL/STDIN input); no search paths.
+- Top-level imports only (E0212 inside blocks/functions).
+- A module is loaded + type-checked + executed ONCE per path; its top-level
+  statements (incl. any `print`s) run at import time, exactly once.
+- A module gets a FRESH scope: it cannot see the importer's variables
+  (compile error if it references them). `fn main()` inside a module is an
+  ordinary function, not auto-invoked.
+- ALL top-level `fn`/`let`/`var` bindings are exported; member types are
+  checked statically (`module.fn(...)`, `module.value`); an unknown member
+  is a compile-time E0211 listing the real exports.
+- Import cycles are a compile-time E0210 naming the cycle.
+- Typed parameters matter: function parameters WITHOUT annotations are
+  typed `<unknown>`, and arithmetic on `<unknown>` is a compile-time error
+  (E0204) — annotate parameters you do math with (this rule predates
+  modules and is unchanged).
+
+Not yet: `from x import y`, packages with `__init__`, wildcard imports,
+relative `./` imports, visibility modifiers, module-level doc metadata.
+
 ## 10. Explicitly NOT implemented yet (see ROADMAP.md)
 
 structs, enums, pattern matching, generics, traits/interfaces, modules /

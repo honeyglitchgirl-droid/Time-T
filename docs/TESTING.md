@@ -34,6 +34,7 @@ bin/time-t bench                            # regenerate benchmark numbers
 | NN / training tests           | tests/test_nn.py                  |
 | Training-utils tests (v0.2.0) | tests/test_train.py               |
 | Checkpoint/serialization tests (v0.2.0) | tests/test_checkpoint.py |
+| Module system tests (v0.3.0)  | tests/test_modules.py             |
 | CLI tests                     | tests/test_cli.py                 |
 | Example program tests         | tests/test_examples.py            |
 | Fuzz tests                    | tests/test_fuzz.py                |
@@ -57,13 +58,21 @@ max abs error, max rel error, tolerance used, op name, input shape
 ```
 on any failure.
 
-`tests/test_ir_exec_diff.py` (v0.2.0) adds ENGINE-level differential testing:
-every example program and 70+ generated random programs are run through the
-AST interpreter, the IR executor unoptimized, and the IR executor with `-O1`,
-and all three stdouts must match byte-for-byte. This is the guarantee behind
+`tests/test_ir_exec_diff.py` (v0.2.0, expanded v0.3.0 — DD-14) adds
+ENGINE-level differential testing: every example program (8, incl. the
+module-using `08_modules.tt`), 9 hand-written feature snippets (loops,
+recursion, tensors, autodiff, `no_grad`), 40 seeded random straight-line
+programs, and two legacy random generators (40 arithmetic + 30
+if/while programs with conditionals) are run through the AST interpreter, the IR
+executor unoptimized, and the IR executor with `-O1`, and all three
+stdouts must match byte-for-byte. This is the guarantee behind
 `time-t run --via-ir` and `inspect --ir --opt`: the IR shown to you is the
 IR that runs, and optimization provably does not change program output on
-the tested corpus.
+the tested corpus. The differential gate has already caught two real
+optimizer bugs (an eliminated temp left dangling in `return`'s args; call
+args not rewritten after CSE) -- both pinned as regression tests in
+`tests/test_optimize.py`, along with a no-dangling-temp invariant scan
+over the whole example corpus.
 
 ## Fuzzing (§30)
 

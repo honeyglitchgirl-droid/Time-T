@@ -1,9 +1,11 @@
 """Time-T type checker.
 
 Performs name resolution + type inference/checking in a single pass over the
-AST, decorating each expression node's `.ty` attribute. See
-docs/DESIGN_DECISIONS.md DD-6 for what is intentionally out of scope
-(generics, traits, structs, enums, pattern matching, modules).
+AST, decorating each expression node's `.ty` attribute. Module imports are
+checked ACROSS file boundaries with real exported types (DD-13, v0.3.0);
+see docs/DESIGN_DECISIONS.md DD-6/DD-13 for what remains intentionally out
+of scope (generics, traits, structs, enums, pattern matching, higher-order
+functions — anything that would turn `<unknown>` into aspirational typing).
 """
 from __future__ import annotations
 
@@ -11,9 +13,10 @@ from typing import Dict, List, Optional
 
 import timet.ast_nodes as A
 from timet.diagnostics import Diagnostic, SourceSpan
+from timet.modules import ModuleLoader, ModuleError
 from timet.types import (
     Type, TInt, TFloat, TBool, TString, TUnit, TTensor, TFunction, TUnknown,
-    PRIMITIVE_NAMES, is_numeric,
+    TModule, PRIMITIVE_NAMES, is_numeric,
 )
 
 
@@ -88,19 +91,70 @@ def _resolve_type_expr(te: A.TypeExpr) -> Type:
 
 
 class TypeChecker:
-    def __init__(self):
+    def __init__(self, loader: Optional[ModuleLoader] = None,
+                 importer_path: str = "<input>"):
         self.global_scope = Scope()
         self.errors: List[TypeError_] = []
+        self.loader = loader or ModuleLoader()
+        self.importer_path = importer_path
 
     def check_program(self, program: A.Program) -> A.Program:
         scope = self.global_scope
-        # First pass: hoist function signatures so mutual/forward calls work.
+        # First pass: resolve imports so later statements can use module
+        # bindings, then hoist function signatures so mutual calls work.
+        for stmt in program.statements:
+            if isinstance(stmt, A.ImportStmt):
+                self._check_import(stmt, scope)
         for stmt in program.statements:
             if isinstance(stmt, A.FnDecl):
                 self._hoist_fn(stmt, scope)
         for stmt in program.statements:
-            self.check_stmt(stmt, scope)
+            if not isinstance(stmt, A.ImportStmt):
+                self.check_stmt(stmt, scope)
         return program
+
+    def _check_import(self, stmt: A.ImportStmt, scope: Scope):
+        span = SourceSpan(stmt.line, stmt.col)
+        mod = self.loader.load(stmt.path, self.importer_path, span)
+        exports = self._module_type(mod, span)
+        scope.define(stmt.binding, exports, mutable=False)
+
+    def _module_type(self, mod, span: SourceSpan) -> TModule:
+        """Type-check a module (once) and return its typed export table."""
+        if mod.checked_types:
+            return self._tmodule_of(mod)
+        if mod.checking_types:
+            raise ModuleError(
+                code="E0210",
+                message=f"import cycle involving module '{mod.dotted}'",
+                span=span,
+                stage="typechecker",
+                note="restructure the modules so the dependency graph is acyclic",
+            )
+        mod.checking_types = True
+        try:
+            sub = TypeChecker(loader=self.loader, importer_path=str(mod.path))
+            sub.check_program(mod.program)
+            exports: Dict[str, Type] = {}
+            for stmt in mod.program.statements:
+                if isinstance(stmt, A.FnDecl):
+                    binding = sub.global_scope.lookup(stmt.name)
+                    if binding is not None:
+                        exports[stmt.name] = binding.ty
+                elif isinstance(stmt, (A.LetStmt, A.ImportStmt)):
+                    name = stmt.name if isinstance(stmt, A.LetStmt) else stmt.binding
+                    binding = sub.global_scope.lookup(name)
+                    if binding is not None:
+                        exports[name] = binding.ty
+            mod.type_exports = exports
+            mod.checked_types = True
+        finally:
+            mod.checking_types = False
+        return self._tmodule_of(mod)
+
+    @staticmethod
+    def _tmodule_of(mod) -> TModule:
+        return TModule(mod.dotted, tuple(sorted(mod.type_exports.items())))
 
     def _hoist_fn(self, fn: A.FnDecl, scope: Scope):
         params = tuple(
@@ -111,6 +165,14 @@ class TypeChecker:
         scope.define(fn.name, TFunction(params, ret), mutable=False)
 
     def check_stmt(self, stmt: A.Stmt, scope: Scope):
+        if isinstance(stmt, A.ImportStmt):
+            raise TypeError_(
+                code="E0212",
+                message="'import' is only allowed at the top level of a file",
+                span=SourceSpan(stmt.line, stmt.col),
+                stage="typechecker",
+                note="move the import to the top of the file (DD-13)",
+            )
         if isinstance(stmt, A.LetStmt):
             self._check_let(stmt, scope)
         elif isinstance(stmt, A.AssignStmt):
@@ -262,6 +324,17 @@ class TypeChecker:
             return self._infer_method_call(expr, scope)
         if isinstance(expr, A.FieldAccess):
             recv_ty = self.infer(expr.receiver, scope)
+            if isinstance(recv_ty, TModule):
+                member = recv_ty.member(expr.field)
+                if member is None:
+                    raise TypeError_(
+                        code="E0211",
+                        message=f"module '{recv_ty.dotted}' has no export '{expr.field}'",
+                        span=SourceSpan(expr.line, expr.col),
+                        stage="typechecker",
+                        note="exports: " + (", ".join(k for k, _ in recv_ty.exports) or "(none)"),
+                    )
+                return member
             if expr.field == "grad" and isinstance(recv_ty, TTensor):
                 return TTensor(recv_ty.dtype)
             return TUnknown()
@@ -380,6 +453,20 @@ class TypeChecker:
         recv_ty = self.infer(expr.receiver, scope)
         for a in expr.args:
             self.infer(a, scope)
+        if isinstance(recv_ty, TModule):
+            # module.fn(...) — statically typed across the module boundary
+            member = recv_ty.member(expr.method)
+            if member is None:
+                raise TypeError_(
+                    code="E0211",
+                    message=f"module '{recv_ty.dotted}' has no export '{expr.method}'",
+                    span=SourceSpan(expr.line, expr.col),
+                    stage="typechecker",
+                    note="exports: " + (", ".join(k for k, _ in recv_ty.exports) or "(none)"),
+                )
+            if isinstance(member, TFunction):
+                return member.ret
+            return member
         if expr.method == "backward":
             return TUnit()
         if expr.method == "item":
@@ -407,5 +494,6 @@ class TypeChecker:
         return TUnknown()
 
 
-def check(program: A.Program) -> A.Program:
-    return TypeChecker().check_program(program)
+def check(program: A.Program, filename: str = "<input>",
+          loader: Optional[ModuleLoader] = None) -> A.Program:
+    return TypeChecker(loader=loader, importer_path=filename).check_program(program)

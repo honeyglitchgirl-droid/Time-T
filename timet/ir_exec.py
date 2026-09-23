@@ -255,6 +255,7 @@ class IRExecutor:
         self.functions = program.function_table()
         self.stdout_write = stdout_write or (lambda s: print(s))
         self.main_frame: Optional[Frame] = None
+        self._initialized: set = set()  # __init__<module> fns already run
 
     # -- public --
 
@@ -286,6 +287,15 @@ class IRExecutor:
     def _call_static(self, name: str, args, kwargs, frame: Frame):
         target = self.functions.get(name)
         if target is not None:
+            if name.startswith("__init__"):
+                # module initializer: runs at most ONCE, directly in the
+                # main frame so its `var_def`s are visible program-wide
+                # (mirrors Python import-once; DD-13)
+                if name in self._initialized:
+                    return None
+                self._initialized.add(name)
+                self._exec_function_body(target, self.main_frame)
+                return None
             if len(args) != len(target.params):
                 raise IrExecError(
                     code="E0702",
@@ -371,6 +381,17 @@ class IRExecutor:
             frame.set_temp(ins.result, val(ins.args[0]))
             return
         if op == "load":
+            if not frame.contains_deep(ins.args[0]):
+                if ins.args[0] in self.functions:
+                    raise IrExecError(
+                        code="E0700",
+                        message=f"IR executor: '{ins.args[0]}' is a function; using "
+                                f"functions as values is not supported in IR yet (DD-9)",
+                        stage="ir-exec")
+                raise IrExecError(
+                    code="E0700",
+                    message=f"IR executor: undefined name '{ins.args[0]}' (op {op})",
+                    stage="ir-exec")
             frame.set_temp(ins.result, frame.get(ins.args[0], op))
             return
         if op == "var_def":

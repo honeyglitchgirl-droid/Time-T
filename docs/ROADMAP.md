@@ -15,13 +15,15 @@ reproduce every claim below.
 - Fuzz: `tests/test_fuzz.py` (random byte streams + mutated valid programs
   must never crash the process — only raise `LexError`/`ParseError`).
 
-## Milestone 2 — Types + functions + modules 🟡 PARTIAL
+## Milestone 2 — Types + functions + modules ✅ DONE (v0.3.0)
 - DONE: primitive types, function declarations, closures, type checking,
-  scoping, immutyou/mutable bindings (`let`/`var`), diagnostics with
-  location + expected/actual (`timet/diagnostics.py`).
-- NOT DONE (tracked, not silently skipped): modules/`import`, generics,
-  traits/interfaces, structs, enums, pattern matching.
-- Tests: `tests/test_typechecker.py`.
+  scoping, immutable/mutable bindings (`let`/`var`), diagnostics with
+  location + expected/actual (`timet/diagnostics.py`); file modules
+  (`import a.b.c [as m]`, typed exports, import-once, fresh scope —
+  DD-13, `timet/modules.py`).
+- NOT DONE (tracked, not silently skipped): generics, traits/interfaces,
+  structs, enums, pattern matching, static shape types.
+- Tests: `tests/test_typechecker.py`, `tests/test_modules.py`.
 
 ## Milestone 3 — Executable runtime ✅ DONE (interpreter)
 - `timet/interpreter.py` tree-walking evaluator executes typed AST: `let`,
@@ -65,7 +67,10 @@ reproduce every claim below.
     statements (a synthetic `__main__` function).
   - **Differentially verified**: AST interpreter vs IR-O0 vs IR-O1 must
     produce byte-identical stdout on every example program AND on
-    generated random programs (`tests/test_ir_exec_diff.py`).
+    generated random programs (`tests/test_ir_exec_diff.py`). This gate has
+    already caught real bugs (CSE leaving a `return` arg dangling;
+    an eliminated temp still referenced by a call) -- both pinned as
+    regression tests. gate: DD-14.
 - DELIBERATE LIMITS (executor fails loudly, never guesses): lambdas,
   nested `fn` decls, if-expressions are not lowered; `&&`/`||` are eager in
   IR; no inlining/fusion/LICM (needs dataflow/CFG — DD-9, DD-12).

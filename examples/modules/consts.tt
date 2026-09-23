@@ -1,0 +1,3 @@
+// Module: shared constants for examples/08_modules.tt.
+let SCALE = 2.0
+let APP_NAME = "time-t-modules"

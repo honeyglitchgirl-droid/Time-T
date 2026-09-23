@@ -281,3 +281,76 @@ pipeline whose total effect is checked END-TO-END by the differential suite
 (IR-O0 vs IR-O1 byte-identical output on all examples + random programs).
 Anything interprocedural or requiring dataflow analysis (inlining, LICM,
 fusion) is explicitly out of scope until a CFG form exists (DD-9).
+
+---
+
+## DD-13: Modules are files with typed exports; IR flattens them with mangled names
+
+**Decision (v0.3.0):** `import a.b.c` resolves to the file
+`<importer's dir>/a/b/c.tt`; the bound name is `c` (or the `as` alias).
+A module is parsed, type-checked, and executed exactly once per canonical
+path (Python-style import-once) in a FRESH global scope containing only the
+engine's builtins/modules — it never sees the importer's variables
+(enforced by test). Import cycles raise E0210 naming the cycle; imports
+are top-level only (E0212). ALL top-level `fn`/`let`/`var` bindings are
+exported; there are no visibility modifiers, no packages/`__init__`, no
+`from x import y` (all deferred, all clearly errored if attempted... except
+`from`, which parses as neither — it raises a normal parse error).
+
+**Static typing across the boundary is REAL, not TUnknown:** the type
+checker recursively checks the module file and records each export's type
+(`TModule(dotted, exports)`); `mathlib.add(1, 2)` is checked against the
+exported `TFunction` signature, and `mathlib.nope` is a compile-time E0211
+listing the actual exports. This deliberately does better than DD-10's
+TUnknown bridge — `nn`/`optim`/`train` pre-bound globals remain TUnknown
+until they are re-packaged as Time-T modules (tracked, not yet done).
+
+**IR representation:** modules are FLATTENED into the single-program IR —
+module functions are prefixed with the dotted module name
+(`mathlib.add`), module top-level statements become a synthetic
+`__init__<dotted>` function whose every binding lives in prefixed named
+storage, and `import x` lowers to `call:__init__x` at the statement's
+source position. The IR executor special-cases `__init__*`: at-most-once
+execution, directly in the main frame (so prefixed bindings are visible
+program-wide). Byte-identical output with the AST engine is pinned by
+`tests/test_modules.py` and the example-08 differential test on all three
+engines.
+
+**Why file-based with no search path:** the smallest design that covers
+real program organization without inventing a package manager (ROADMAP
+Milestone 12 territory). Resolution is deterministic and local:
+relative-to-importer only.
+
+**Known limits:** higher-order use of module functions in IR (passing
+`mathlib.add` as a value) raises the same clear error as other
+higher-order use (DD-9); module-level mutable state is process-global
+(same as Python, but worth stating); error spans for errors INSIDE an
+imported module point at the module file via the importer-path chain but
+the diagnostic message does not yet print the full import stack.
+
+---
+
+## DD-14: Optimizer/executor correctness is established by differential testing, not by proof
+
+**Decision (v0.3.0):** every nontrivial program shipped in the repo (8
+examples + 13 hand-written feature snippets + 40 seeded random straight-line
+programs, growing) MUST run byte-identically on the AST interpreter, the IR
+executor at -O0, and the IR executor at -O1 (`tests/test_ir_exec_diff.py`).
+Optimization passes are additionally unit-tested for their documented
+safety rules (e.g. `1/0` is NOT folded, CSE never crosses markers or
+stores — both pinned by regression tests from actual bugs found).
+
+**Why:** the optimizer passes are small and local, but correctness bugs
+(In1: CSE not rewriting call args of eliminated temps; In2: an elimination
+that leaves `return %t8` dangling because a control marker swallowed the
+last def) were found only by running the engines side by side. Differential
+testing is the honest way to gain confidence without a full formal
+verification, and it scales to each new pass: new passes must keep the
+differential suite green or they do not land.
+
+**Known limits:** the two random generators cover arithmetic + if/while
+at fixed shapes; they do not generate nested closures, module imports, or
+tensor-shuffle programs (each covered only by snippet/example tests).
+`f`-strings and `if`-expressions are
+deliberately not in the IR executor (executor raises clearly, tests assert
+the error is raised, not a wrong result).

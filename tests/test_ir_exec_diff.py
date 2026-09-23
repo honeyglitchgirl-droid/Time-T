@@ -1,12 +1,12 @@
-"""Differential testing (master prompt section 29): the AST interpreter, the
-IR executor, and the OPTIMIZED IR executor must produce byte-identical
-output on every example program and on generated random programs.
+"""Differential tests (§30): AST interpreter vs IR executor (-O0 and -O1).
 
-This is what makes `time-t inspect --ir` trustworthy: the IR you see is the
-IR that runs.
+Every example program and a battery of generated straight-line programs
+must produce BYTE-IDENTICAL stdout on all three engines. This suite is the
+load-bearing claim for "the IR executor is correct": it does not trust the
+lowering or the optimizer, it compares outputs.
 """
 import random
-import pathlib
+from pathlib import Path
 
 import pytest
 
@@ -16,20 +16,24 @@ from timet.ir import lower_program
 from timet.ir_exec import run_program
 from timet.optimize import optimize_program
 from timet.interpreter import run_source
+from timet.modules import ModuleLoader
 
-EXAMPLES = sorted(pathlib.Path("examples").glob("*.tt"))
+EXAMPLES = sorted(Path("examples").glob("*.tt"))
 
 
-def _run_ast(src: str, filename: str):
+def run_ast(src: str, filename: str):
     out = []
     run_source(src, filename=filename, stdout_write=out.append)
     return out
 
 
-def _run_ir(src: str, filename: str, level: int):
+def run_ir(src: str, filename: str, level: int):
     out = []
-    tir = lower_program(check(parse(src, filename)))
-    if level >= 1:
+    loader = ModuleLoader()
+    tir = lower_program(check(parse(src, filename), filename=filename,
+                              loader=loader),
+                        loader=loader, importer_path=filename)
+    if level:
         tir, _ = optimize_program(tir, level=level)
     run_program(tir, stdout_write=out.append)
     return out
@@ -39,12 +43,126 @@ def _run_ir(src: str, filename: str, level: int):
 def test_example_matches_on_all_three_engines(path):
     src = path.read_text()
     expected = path.with_suffix(".expected").read_text().splitlines()
-    assert _run_ast(src, str(path)) == expected, "AST interpreter diverged from expected"
-    assert _run_ir(src, str(path), level=0) == expected, "IR executor (-O0) diverged"
-    assert _run_ir(src, str(path), level=1) == expected, "IR executor (-O1) diverged"
+    assert run_ast(src, str(path)) == expected, "AST interpreter diverged from expected"
+    assert run_ir(src, str(path), level=0) == expected, "IR executor (-O0) diverged"
+    assert run_ir(src, str(path), level=1) == expected, "IR executor (-O1) diverged"
 
 
-# ---------------- generated random straight-line programs ----------------
+SNIPPETS = [
+    # arithmetic + precedence
+    "print(1 + 2 * 3 - 4)\nprint(7 % 3)\nprint(2.5 * 4.0)\n",
+    # bools and comparisons (boolean ops via && / ||)
+    "print((1 < 2) && (2 < 3))\nprint(!(1 == 2) || false)\n",
+    # if/else-if/else (chained blocks; parser desugars else-if into else { if })
+    """
+let x = 5
+if x < 3 {
+    print("low")
+} else if x < 7 {
+    print("mid")
+} else {
+    print("high")
+}
+""",
+    # while loop with var mutation
+    """
+var i = 0
+var acc = 0
+while i < 5 {
+    acc = acc + i * i
+    i = i + 1
+}
+print(acc)
+""",
+    # functions with early return from an if block
+    """
+fn fib(n: Int) -> Int {
+    if n < 2 { return n }
+    return fib(n - 1) + fib(n - 2)
+}
+print(fib(12))
+""",
+    # tensors: construction, indexing, reductions, matmul
+    """
+let t = [1.0, 2.0, 3.0]
+print(t.sum())
+print(t[1].item())
+let m = [[1.0, 2.0], [3.0, 4.0]]
+print(m.matmul(m).sum())
+""",
+    # autodiff smoke: grad through re-wirings of the same value
+    """
+let x = tensor([[0.0, 1.0]], grad=true)
+let y = x * x + x
+y.sum().backward()
+print(x.grad)
+""",
+    # no_grad block + in-place schematic update (var + method call mix)
+    """
+var w = tensor([1.0, 2.0], grad=true)
+let loss = (w * w).sum()
+loss.backward()
+no_grad {
+    w.sub_(w.grad * 0.5)
+}
+print(w)
+""",
+    # int-only const-heavy code that O1 should mostly fold
+    """
+let a = 2
+let b = 3
+let c = a * b + a + b
+print(c * c)
+""",
+]
+
+
+@pytest.mark.parametrize("src", SNIPPETS)
+def test_snippet_three_engines_match(src):
+    a = run_ast(src, "<snippet>")
+    b = run_ir(src, "<snippet>", 0)
+    c = run_ir(src, "<snippet>", 1)
+    assert a == b == c and a, (a, b, c)
+
+
+def _gen_straightline_program(rng: random.Random) -> str:
+    """Random straight-line program over ints/floats with determinable output.
+
+    Avoids division/modulo by zero by construction: right operand of div/mod
+    is a literal in 1..9. Floats avoided for modulo (float % works but repr
+    noise is uninteresting here).
+    """
+    lines = []
+    vars_ = []
+    for i in range(rng.randint(3, 9)):
+        op = rng.choice(["+", "-", "*", "/", "%"])
+        lhs = rng.choice(vars_ + [str(rng.randint(0, 9))])
+        rhs = rng.choice(vars_ + [str(rng.randint(0, 9))])
+        if op in ("/", "%"):
+            rhs = str(rng.randint(1, 9))
+        v = f"v{i}"
+        lines.append(f"let {v} = ({lhs}) {op} ({rhs})")
+        vars_.append(v)
+        if rng.random() < 0.35:
+            lines.append(f"print({v})")
+    if vars_:
+        lines.append(f"print({vars_[-1]})")
+    else:
+        lines.append("print(0)")
+    return "\n".join(lines) + "\n"
+
+
+@pytest.mark.parametrize("seed", range(40))
+def test_generated_straightline_programs_match(seed):
+    rng = random.Random(seed)
+    src = _gen_straightline_program(rng)
+    a = run_ast(src, f"<gen{seed}>")
+    b = run_ir(src, f"<gen{seed}>", 0)
+    c = run_ir(src, f"<gen{seed}>", 1)
+    assert a == b == c, (src, a, b, c)
+
+
+# ---------------- legacy random generators (kept from v0.2.0 suite) ----------------
 
 def _gen_program(rng: random.Random, n_lets: int) -> str:
     """Random integer/float arithmetic over previous bindings. No string
@@ -73,9 +191,9 @@ def test_random_programs_agree_across_engines():
     for seed in range(40):
         rng_i = random.Random(rng.randint(0, 10 ** 9))
         src = _gen_program(rng_i, rng_i.randint(3, 15))
-        ast = _run_ast(src, "<gen>")
-        ir0 = _run_ir(src, "<gen>", level=0)
-        ir1 = _run_ir(src, "<gen>", level=1)
+        ast = run_ast(src, "<gen>")
+        ir0 = run_ir(src, "<gen>", level=0)
+        ir1 = run_ir(src, "<gen>", level=1)
         assert ast == ir0 == ir1, (
             f"differential mismatch on generated program:\n{src}\n"
             f"ast={ast}\nir-O0={ir0}\nir-O1={ir1}")
@@ -103,8 +221,8 @@ def test_random_programs_with_conditionals_agree():
             print({c:.3f} * {d:.3f})
         }}
         """
-        ast = _run_ast(src, "<gen>")
-        ir0 = _run_ir(src, "<gen>", level=0)
-        ir1 = _run_ir(src, "<gen>", level=1)
+        ast = run_ast(src, "<gen>")
+        ir0 = run_ir(src, "<gen>", level=0)
+        ir1 = run_ir(src, "<gen>", level=1)
         assert ast == ir0 == ir1, (
             f"differential mismatch:\n{src}\nast={ast}\nir0={ir0}\nir1={ir1}")

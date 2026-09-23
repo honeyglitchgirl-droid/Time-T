@@ -63,6 +63,20 @@ lambdas, if-EXPRESSIONS) emit an explicit `unsupported_stmt`/
 clear `IrExecError` naming the construct instead of silently running
 something wrong.
 
+## Modules (`timet/modules.py`) — v0.3.0
+
+`import a.b.c [as m]` (top-level only) resolves to the `.tt` file relative
+to the importing file (CWD for REPL/STDIN). `ModuleLoader` owns parsing
+caching keyed by canonical path, cycle detection (E0210), and missing-file
+diagnostics (E0213). The type checker runs each module in a FRESH scope
+via a recursive sub-checker and exposes every top-level fn/let/var as a
+typed export (`TModule`); unknown members are E0211 listing the exports.
+The IR lowerer FLATTENS modules into the single-program IR: functions are
+renamed `<dotted>.<fn>`, top-level statements become `__init__<dotted>`
+(emitted in dependency order, executed at-most-once by the IR executor in
+the main frame), and local storage inside module initializers is prefixed
+with the module name — see DD-13 for the full semantics and its limits.
+
 ## IR execution (`timet/ir_exec.py`) — v0.2.0
 
 The IR is directly executable: `time-t run <file> --via-ir [-O 0|1]`.
@@ -98,3 +112,22 @@ report statistics (`OptStats`) shown by `inspect --ir --opt`.
 These are sequenced in `docs/ROADMAP.md` Milestone 6 and are not silently
 missing — `time-t inspect --ir` will show you exactly what is and is not
 represented for any given program today.
+
+## Optimization correctness — the differential gate (DD-14)
+
+The authoritative check that lowering/optimization preserve semantics is
+NOT proof; it is `tests/test_ir_exec_diff.py`. Every example and a set of
+generated programs must produce byte-identical stdout on:
+ - the AST interpreter (the reference execution),
+ - the IR executor at -O0 (raw lowering),
+ - the IR executor at -O1 (optimized).
+
+Every optimizer pass additionally must document its exact safety rule
+(`1/0` never folded; Float `x*0` never folded: NaN/Inf; CSE never crosses
+control markers and reloads after `store`), violating rules in the past
+produced real bugs that only the differential gate caught (see
+`test_cse_eliminates_duplicates_and_rewrites_all_uses_including_markers`
+and `test_const_fold_does_not_divide_or_modulo_by_zero`).
+
+Adding a pass without a documented safety rule + a differential-green run
+is not permitted — that is the process definition of "optimize" here.

@@ -109,11 +109,24 @@ def test_unterminated_block_error():
         parse("fn f() { let x = 1")
 
 
-def test_struct_enum_match_import_not_implemented():
-    for kw in ("struct", "enum", "match", "import"):
+def test_struct_enum_match_not_implemented():
+    # NOTE: 'import' left this list in v0.3.0 when the module system landed
+    # (tests/test_modules.py); struct/enum/match remain honest stubs.
+    for kw in ("struct", "enum", "match"):
         with pytest.raises(ParseError) as exc:
             parse(f"{kw} Foo {{}}")
         assert exc.value.code == "E0101"
+
+
+def test_import_statement_parses_dotted_path_and_alias():
+    prog = parse("import modules.mathlib as ml\nimport mathlib")
+    assert isinstance(prog.statements[0], A.ImportStmt)
+    assert prog.statements[0].path == ["modules", "mathlib"]
+    assert prog.statements[0].alias == "ml"
+    assert prog.statements[0].binding == "ml"
+    assert prog.statements[1].path == ["mathlib"]
+    assert prog.statements[1].alias is None
+    assert prog.statements[1].binding == "mathlib"
 
 
 def test_no_grad_block():

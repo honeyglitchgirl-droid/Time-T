@@ -98,7 +98,9 @@ class Parser:
                 return self._parse_for()
             if tok.text == "no_grad":
                 return self._parse_no_grad()
-            if tok.text in ("struct", "enum", "match", "import"):
+            if tok.text == "import":
+                return self._parse_import()
+            if tok.text in ("struct", "enum", "match"):
                 raise ParseError(
                     code="E0101",
                     message=f"'{tok.text}' is not implemented yet in this version of Time-T",
@@ -107,6 +109,17 @@ class Parser:
                     note="see docs/ROADMAP.md for the feature sequencing",
                 )
         return self._parse_expr_or_assign_stmt()
+
+    def _parse_import(self) -> A.ImportStmt:
+        kw = self._advance()  # 'import'
+        parts = [self._expect(TokenKind.IDENT, what="module name").text]
+        while self._match(TokenKind.OP, "."):
+            parts.append(self._expect(TokenKind.IDENT, what="module name").text)
+        alias = None
+        if self._check(TokenKind.IDENT) and self._peek().text == "as":
+            self._advance()  # 'as'
+            alias = self._expect(TokenKind.IDENT, what="import alias").text
+        return A.ImportStmt(parts, alias, line=kw.line, col=kw.col)
 
     def _parse_block(self) -> A.Block:
         tok = self._expect(TokenKind.LBRACE, what="block")

@@ -26,6 +26,11 @@ from timet import memory
 NOT_IMPLEMENTED = {"build", "profile", "export", "package", "doctor"}
 
 
+def _fresh_loader():
+    from timet.modules import ModuleLoader
+    return ModuleLoader()
+
+
 def _read(path: str) -> str:
     return Path(path).read_text()
 
@@ -44,7 +49,7 @@ def cmd_check(args) -> int:
         try:
             src = _read(path)
             program = parse(src, path)
-            check(program)
+            check(program, filename=path, loader=_fresh_loader())
             results.append({"file": path, "status": "ok"})
         except Diagnostic as e:
             ok = False
@@ -69,19 +74,22 @@ def cmd_run(args) -> int:
                 print(s)
 
         program = parse(src, args.file)
-        check(program)
+        loader = _fresh_loader()
+        check(program, filename=args.file, loader=loader)
         if getattr(args, "via_ir", False):
             from timet.ir import lower_program
             from timet.ir_exec import run_program
-            tir = lower_program(program)
+            tir = lower_program(program, loader=loader, importer_path=args.file)
             engine = "ir"
-            if args.opt_level >= 1:
+            opt = getattr(args, "opt_level", 0) or 0
+            if opt:
                 from timet.optimize import optimize_program
-                tir, _ = optimize_program(tir, level=args.opt_level)
+                tir, _ = optimize_program(tir, level=opt)
             run_program(tir, stdout_write=collect)
         else:
             engine = "ast"
-            interp = Interpreter(stdout_write=collect)
+            interp = Interpreter(stdout_write=collect, loader=loader,
+                                 importer_path=args.file)
             interp.run(program)
         if args.json:
             print(json.dumps({"status": "ok", "engine": engine, "stdout": outputs}))
@@ -95,10 +103,11 @@ def cmd_inspect(args) -> int:
     try:
         src = _read(args.file)
         program = parse(src, args.file)
-        check(program)
+        loader = _fresh_loader()
+        check(program, filename=args.file, loader=loader)
         payload = {"status": "ok", "file": args.file}
         if args.ir:
-            tir = lower_program(program)
+            tir = lower_program(program, loader=loader, importer_path=args.file)
             if getattr(args, "opt", False):
                 from timet.optimize import optimize_program
                 tir, stats = optimize_program(tir, level=args.opt_level)
