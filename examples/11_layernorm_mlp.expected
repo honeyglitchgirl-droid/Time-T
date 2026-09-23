@@ -1,0 +1,2 @@
+trained with LayerNorm successfully
+Tensor([0, 1, 1, 0])

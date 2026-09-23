@@ -29,8 +29,9 @@ work unless it is backed by a passing test.**
   (`SGD`, `Adam`) — proven by training runs that must reach loss/accuracy
   thresholds in tests, not just "loss went down".
 - Neural-network layers: Linear, ReLU/Sigmoid/Tanh/Softmax, Flatten,
-  Dropout (seeded), Conv2D (stride/padding, gradient-checked) and
-  Embedding; losses MSE/CrossEntropy/BCE; Sequential. Optimizers: SGD,
+  Dropout (seeded), Conv2D (stride/padding, gradient-checked),
+  Embedding, and LayerNorm (affine scale/shift, gradient-checked);
+  losses MSE/CrossEntropy/BCE; Sequential. Optimizers: SGD,
   Adam, AdamW (decoupled decay). Training utilities: `train.fit()`
   (full-batch), `train.fit_loader()` with `TensorDataset`/`DataLoader`
   (seeded-shuffle mini-batching), `StepLR`/`ExponentialLR`/
@@ -46,12 +47,13 @@ work unless it is backed by a passing test.**
   byte-verified subset to a native binary via C + your system compiler)
   are real; `profile`, `export`, `package`, `doctor` remain explicit,
   machine-readable "not implemented yet" stubs (never silent no-ops).
-- 414 automated tests across lexer/parser/typechecker/interpreter/IR/
+- 425 automated tests across lexer/parser/typechecker/interpreter/IR/
   IR-executor/optimizer/tensor/autodiff/backend/nn/train/checkpoint/modules/
-  CLI/examples/differential/fuzz/diagnostics (incl. a 3-engine differential gate: same bytes from AST interpreter, IR-O0, and IR-O1) (`pytest -q`).
-- 7 runnable example programs with byte-exact expected output
-  (`examples/*.tt` + `examples/*.expected`), incl. an Adam + cross-entropy
-  XOR classifier written in Time-T.
+  CLI/examples/differential/fuzz/diagnostics/layernorm (incl. a 3-engine differential gate: same bytes from AST interpreter, IR-O0, and IR-O1) (`pytest -q`).
+- 8 runnable example programs with byte-exact expected output
+  (`examples/*.tt` + `examples/*.expected`), incl. Adam + cross-entropy
+  XOR classifier, Conv2D center detector, and LayerNorm MLP written in Time-T.
+
 - A real (not fabricated) benchmark harness with results written to
   `benchmarks/results/*.json`, labeled with the actual host CPU/platform.
 

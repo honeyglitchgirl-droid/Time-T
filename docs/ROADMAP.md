@@ -101,9 +101,16 @@ reproduce every claim below.
   bit-identical to Adam at wd=0). Usable from Time-T code:
   `examples/09_conv_center_detector.tt` trains a Conv2D+Flatten+Linear
   center-detector on all three engines (loss ~1e-7, byte identical).
-- NOT DONE: Conv1D/Conv3D, groups/dilation/transposed convs, normalization
-  layers (Batch/LayerNorm), attention/transformer blocks, weights/init
-  schemes beyond Kaiming-uniform, mixed precision, mini-batching.
+- EXPANDED (v0.9.1, DD-22): `LayerNorm` (Ba, Kiros, Hinton 2016) layer
+  and `layer_norm` functional op with learnable elementwise affine scale
+  and bias (or affine disabled), numerical stability epsilon, gradient
+  finite-difference checked across input, weight, and bias, plus checkpoint
+  round-trip. Usable from Time-T code: `examples/11_layernorm_mlp.tt`
+  trains an MLP with LayerNorm on all three engines with byte-identical
+  output.
+- NOT DONE: Conv1D/Conv3D, BatchNorm, attention/transformer blocks,
+  weight/init schemes beyond Kaiming-uniform, mixed precision.
+
 
 ## Milestone 8 — Training 🟡 PARTIAL (started v0.2.0)
 - DONE: `timet/train.py` — `accuracy()` metric, `History`,

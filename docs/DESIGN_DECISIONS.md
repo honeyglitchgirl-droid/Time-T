@@ -574,7 +574,26 @@ at the repo's standard 1e-3 tolerance.
 4. History/logs are NOT part of training state -- a resumed fit()
    restarts its History by design (stated in the file's own limits
    section). Best-epoch weights remain checkpoint.py's job.
-5. Loader RNG restores by REPLACING the loader's generator with one
-   seeded to the saved bit-generator state -- streams continue exactly
-   where saved (tested: wrong-seed loader corrected by restore produces
-   the uninterrupted run's next epoch).
+---
+
+## DD-22: Layer Normalization (Milestone 7: LayerNorm)
+
+**Decisions (v0.9.1):**
+1. `LayerNorm` (Ba, Kiros, Hinton 2016) layer and `layer_norm` functional
+   operator operate over arbitrary trailing dimensions `normalized_shape`.
+2. Computes `(x - mean) / sqrt(var + eps) * gamma + beta` directly via
+   autograd-tracked primitive operations on `Tensor`. As a result, the backward
+   pass flows through the existing verified primitive-op backward rules
+   (`mean`, `sub`, `mul`, `div`, `sqrt`).
+3. Correctness verified by central finite-difference gradient checks
+   against input `x`, `weight` (gamma), and `bias` (beta) in
+   `tests/test_layernorm.py` with tolerances (`rtol=1e-3, atol=1e-3`), as
+   well as forward verification against an independent reference.
+4. `elementwise_affine=True` by default, initializing `weight` to 1 and `bias`
+   to 0. When set to False, no parameters are tracked or returned.
+5. Incompatible shapes raise diagnostic `NNError` code `E0614`.
+6. Verified through state dict and checkpoint save/load roundtrips, and
+   exposed to Time-T programs via the pre-bound `nn` module with a new
+   runnable example (`examples/11_layernorm_mlp.tt`) executing byte-identically
+   across AST, IR-O0, and IR-O1 engines.
+

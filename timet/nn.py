@@ -1,19 +1,20 @@
 """Neural-network layer library (master prompt sections 8, 22).
 
-Implemented (all covered by tests in tests/test_nn.py):
+Implemented (all covered by tests in tests/test_nn.py, tests/test_layernorm.py):
   Layers:    Linear, ReLU, Sigmoid, Tanh, Softmax, Flatten, Conv2D, Embedding,
-             Dropout, Sequential
+             LayerNorm, Dropout, Sequential
   Losses:    MSELoss, CrossEntropyLoss, BCELoss
   Plumbing:  Module.parameters(), Module.train()/eval() (recursive)
 
 Still NOT implemented (see docs/ROADMAP.md, Milestone 7):
-  Conv1D, normalization layers, attention/transformer blocks,
+  Conv1D, BatchNorm, attention/transformer blocks,
   weight-initialization schemes beyond Kaiming-uniform.
+
 """
 from __future__ import annotations
 
 import math
-from typing import List
+from typing import List, Sequence, Union
 
 import numpy as np
 
@@ -292,6 +293,50 @@ class Embedding(Module):
         return [self.weight]
 
 
+class LayerNorm(Module):
+    """Layer Normalization (Ba, Kiros, Hinton 2016).
+
+    Applies Layer Normalization over the last D dimensions defined by
+    `normalized_shape`:
+        y = (x - E[x]) / sqrt(Var[x] + eps) * gamma + beta
+
+    `normalized_shape`: int or Sequence[int].
+    `eps`: small value added to the denominator for numerical stability.
+    `elementwise_affine`: if True, learnable scale (weight) initialized to 1
+                          and bias initialized to 0 are applied.
+    """
+
+    def __init__(self, normalized_shape: Union[int, Sequence[int]], eps: float = 1e-5,
+                 elementwise_affine: bool = True, seed: int = 0):
+        super().__init__()
+        if isinstance(normalized_shape, int):
+            self.normalized_shape = (normalized_shape,)
+        else:
+            self.normalized_shape = tuple(normalized_shape)
+        if any(d <= 0 for d in self.normalized_shape):
+            raise NNError(code="E0614", message="LayerNorm: dimensions in normalized_shape must be > 0",
+                          stage="nn")
+        self.eps = float(eps)
+        self.elementwise_affine = bool(elementwise_affine)
+        if self.elementwise_affine:
+            w = np.ones(self.normalized_shape, dtype=np.float32)
+            b = np.zeros(self.normalized_shape, dtype=np.float32)
+            self.weight = Tensor(w, requires_grad=True)
+            self.bias = Tensor(b, requires_grad=True)
+        else:
+            self.weight = None
+            self.bias = None
+
+    def forward(self, x: Tensor) -> Tensor:
+        return layer_norm(x, self.normalized_shape, self.weight, self.bias, self.eps)
+
+
+    def parameters(self) -> List[Tensor]:
+        if self.elementwise_affine:
+            return [self.weight, self.bias]
+        return []
+
+
 class Dropout(Module):
     """Inverted dropout: scales surviving activations by 1/(1-p) at train
     time, identity at eval time. Seeded => deterministic, so tests and
@@ -410,3 +455,32 @@ def cross_entropy_loss(logits: Tensor, targets) -> Tensor:
 
 def binary_cross_entropy(pred: Tensor, target: Tensor) -> Tensor:
     return BCELoss()(pred, target)
+
+
+def layer_norm(x: Tensor, normalized_shape: Union[int, Sequence[int]],
+               weight: Tensor = None, bias: Tensor = None, eps: float = 1e-5) -> Tensor:
+    """Functional Layer Normalization over the trailing dimensions."""
+    if isinstance(normalized_shape, int):
+        norm_shape = (normalized_shape,)
+    else:
+        norm_shape = tuple(normalized_shape)
+    norm_ndim = len(norm_shape)
+    if x.ndim < norm_ndim or tuple(x.shape[-norm_ndim:]) != norm_shape:
+        raise NNError(
+            code="E0614",
+            message=f"layer_norm: input tail shape {tuple(x.shape[-norm_ndim:])} "
+                    f"does not match normalized_shape {norm_shape}",
+            stage="nn"
+        )
+    axes = tuple(range(x.ndim - norm_ndim, x.ndim))
+    mean = x.mean(axis=axes, keepdims=True)
+    diff = x - mean
+    var = (diff * diff).mean(axis=axes, keepdims=True)
+    std = (var + eps).sqrt()
+    x_hat = diff / std
+    if weight is not None:
+        x_hat = x_hat * weight
+    if bias is not None:
+        x_hat = x_hat + bias
+    return x_hat
+

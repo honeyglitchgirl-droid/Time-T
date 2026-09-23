@@ -582,3 +582,43 @@ the optimizer work began only after the IR itself became executable.)
     stream continuation via wrong-seed-then-restore, five refusal paths
     E0649-E0658, byte-identical saves, no-moment-yet resume), plus the
     entire 402-test suite unharmed.
+
+
+---
+
+# Entry 10 — v0.9.1, Milestone 7 expansion (LayerNorm; DD-22)
+
+1. **What works?** LayerNorm module (`timet.nn.LayerNorm`) and functional op
+   (`timet.nn.layer_norm`) over arbitrary trailing dimensions with elementwise
+   learnable affine scale (weight) and shift (bias), or affine disabled;
+   numerical stability epsilon; input/weight/bias gradients verified with
+   finite differences; parameter checkpoint roundtrip; training an MLP
+   with LayerNorm from Time-T code (`examples/11_layernorm_mlp.tt`), verified
+   byte-identically across AST, IR-O0, and IR-O1 execution engines.
+2. **What does not work / doesn't exist?** BatchNorm, GroupNorm, InstanceNorm,
+   RMSNorm; fused CUDA/C kernels for LayerNorm (standard composed autograd
+   ops are used).
+3. **What is untested?** Normalized shape with rank > 3 (1D and 2D verified).
+4. **What is slow?** Composed primitive ops create intermediate tensors
+   on the autograd tape rather than doing a fused single-pass reduction;
+   fine for target model scales.
+5. **What consumes excessive memory?** Composed primitive autograd tape
+   retains intermediate tensors for mean/diff/var/std.
+6. **What architectural debt exists?** Normalization layers could benefit from
+   dedicated fused backward kernels once native/C execution expands to tensors.
+7. **What assumptions may be wrong?** Default eps=1e-5 is standard across
+   PyTorch and modern transformer architectures; assumption that trailing
+   normalized dimensions match exact tuple shape is standard.
+8. **What should be redesigned before continuing?** Once attention blocks
+   arrive, LayerNorm will be a primary component (pre-norm vs post-norm);
+   its API should remain consistent with standard linear/attention layers.
+9. **What should NOT be implemented yet?** BatchNorm with running mean/var
+   tracking in eval mode (LayerNorm is simpler, more relevant for modern
+   ML/transformers, and doesn't introduce batch-dependency state).
+10. **What evidence supports current claims?** `pytest -q` = 425 passing:
+    `tests/test_layernorm.py` (9 tests covering forward math, parameters,
+    zero-mean unit-variance, finite difference gradients for input/weight/bias,
+    elementwise_affine=False, shape mismatch E0614, Adam optimization
+    convergence on affine parameters, and checkpoint roundtrips),
+    plus differential execution on example 11.
+

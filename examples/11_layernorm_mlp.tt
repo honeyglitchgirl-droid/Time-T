@@ -1,0 +1,35 @@
+// Example 11: LayerNorm in an MLP with Adam
+// Demonstrates LayerNorm (Ba, Kiros, Hinton 2016) with affine parameters.
+
+fn main() {
+    let model = nn.Sequential(
+        nn.Linear(4, 8, seed=1),
+        nn.LayerNorm(8),
+        nn.ReLU(),
+        nn.Linear(8, 2, seed=2)
+    )
+
+    let x = tensor([
+        [1.0, 2.0, -1.0, 0.5],
+        [-0.5, 1.5, 2.0, -1.0],
+        [0.0, -1.0, 1.0, 2.0],
+        [2.0, 0.0, -2.0, 1.0]
+    ])
+    let y = tensor([0, 1, 1, 0])
+
+    let opt = optim.Adam(model.parameters(), lr=0.05)
+    var step = 0
+    while step < 60 {
+        let logits = model(x)
+        let loss = nn.cross_entropy_loss(logits, y)
+        loss.backward()
+        opt.step()
+        opt.zero_grad()
+        step = step + 1
+    }
+
+    let final_logits = model(x)
+    let preds = final_logits.argmax(axis=1)
+    print("trained with LayerNorm successfully")
+    print(preds)
+}

@@ -4,7 +4,22 @@ All notable changes to Time-T are recorded here. Format loosely follows
 Keep a Changelog; versioning follows master prompt §37 (targets, not
 promises).
 
+## [0.9.1] — 2026-09-24 (Milestone 7: LayerNorm)
+
+- **`LayerNorm` and `layer_norm`** (DD-22): Layer normalization
+  (Ba, Kiros, Hinton 2016) over trailing dimensions with elementwise
+  affine scale (weight) and shift (bias), or affine disabled.
+- **Autograd correctness**: Gradients finite-difference checked across
+  input, weight, and bias under multiple configurations.
+- **Checkpoint & state compatibility**: Weight and bias serialize and
+  restore cleanly via JSON and binary checkpoints.
+- **Time-T program reachable**: `examples/11_layernorm_mlp.tt` demonstrates
+  training with LayerNorm, running byte-identically on AST, IR-O0, and IR-O1.
+
+Suite: **425 tests** (was 414).
+
 ## [0.9.0] — 2026-09-23 (Milestone 8: full training-state checkpoints)
+
 
 - **`save_state`/`load_state`** (DD-21): v2-family binary files carrying
   optimizer moments (Adam/AdamW m/v/t, config), scheduler internals
