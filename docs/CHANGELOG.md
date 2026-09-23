@@ -4,6 +4,28 @@ All notable changes to Time-T are recorded here. Format loosely follows
 Keep a Changelog; versioning follows master prompt §37 (targets, not
 promises).
 
+## [0.8.0] — 2026-09-23 (Milestone 8: deterministic binary checkpoints)
+
+- **Format v2 `.ttck`** (DD-20): zip of `manifest.json` + raw f32 `.npy`
+  entries with FIXED zip timestamps and sorted names -- byte-identical
+  saves are part of the format, just like v1's JSON. np.savez_compressed
+  was evaluated and rejected (timestamps/header nondeterminism).
+- **Unified loading**: `load()`/ `load_into()` sniff CONTENT (zip magic),
+  not extensions; both formats load interchangeably; a deliberately
+  mis-named `.weird` file is covered by test.
+- **Manifest integrity**: extra/missing entries, declared-vs-actual shape
+  lies, format/version keys, truncation -> specific errors E0645--E0648.
+  No corruption path silently loads partial garbage.
+- **`save_bin()`/`load_bin()`** public API alongside `save()`/`load()`.
+- Honest size claim, TEST-pinned: on a 10k-param model the binary file is
+  <25% of the JSON size; tiny models are header noise either way and the
+  test deliberately uses the big one.
+- Resume theorem re-proven for v2 byte-exactly (SGD, parameter-only) --
+  and the DD-20 record of why Adam falsifies that theorem (fresh moments
+  != continuing moments), so nobody writes it as an example later.
+
+Suite: **402 tests** (was 391).
+
 ## [0.7.0] — 2026-09-23 (Milestone 8: validation splits + loop unification)
 
 - **fit_loader(val_loader=...)** (DD-19): per-epoch validation passes via

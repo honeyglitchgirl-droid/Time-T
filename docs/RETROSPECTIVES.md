@@ -454,3 +454,62 @@ the optimizer work began only after the IR itself became executable.)
     ES stop, E0643, E0644), plus the whole pre-existing fit/fit_loader
     corpus passing UNCHANGED after the loop unification -- the strongest
     available evidence byte-behavior is preserved.
+
+
+---
+
+# Entry 8 — v0.8.0, Milestone 8 (binary checkpoints; DD-20 + the Adam falsification)
+
+1. **What works?** v2 saves/loads round-trip values and shapes exactly;
+   saves are byte-identical across runs; content-sniffing loads both
+   formats; the manifest integrity suite rejects every corruption class
+   we could construct; the SGD resume theorem holds BYTE-EXACTLY through
+   v2 serialization.
+2. **What does not work / doesn't exist?** Optimizer-state checkpointing
+   (Adam m/v, SGD momentum buffers, scheduler epoch), RNG-stream
+   checkpointing (a resumed run cannot continue a shuffled loader's exact
+   stream), dtype-faithful storage (f64 params silently become f32 --
+   declared in the manifest so at least detectable; the loader does NOT
+   yet honor the declared dtype and that is now an open gap between
+   write-path honesty and read-path honesty).
+3. **What is untested?** zip bomb / pathological compression ratios (we
+   trust the stdlib; worth a fuzz seed), very large SINGLE tensors
+   (>2GB, not reachable at our scales), manifest with non-ASCII names
+   (our namer uses dotted ASCII paths exclusively).
+4. **What is slow?** Nothing measured; ZIP_DEFLATED at level 9 on tensor
+   float noise is expectedly modest -- a benchmark row for checkpoint
+   save/load would be honest to add when the Benchmarks table next
+   updates. No claim made today.
+5. **What consumes excessive memory?** save_bin builds the whole zip in
+   memory (io.BytesIO) before writing -- fine for MBs, wrong for the
+   future "larger models" case that motivated this very tranche. Streaming
+   zip writes are marked here as the known fix when sizes demand it.
+6. **What architectural debt exists?** The matched error-code scheme
+   (E0645..E0648 reused for three distinct mismatch kinds with the same
+   code) compresses diagnostics at the message level -- acceptable now,
+   but if a registry of diagnosis codes ever exists these should split.
+   load_bin trusts `np.load(..., allow_pickle=False)` for payload safety;
+   documented, worth a periodic re-audit when adding formats.
+7. **What assumptions may be wrong?** That .npy-in-zip is "portable
+   enough" -- it is universal across numpy but asks non-Python readers to
+   implement .npy; a future C interop layer will need its OWN tiny .npy
+   parser or a raw-bin variant (noted for Milestone 11). That f32 is
+   always enough for Time-T params (today true). That fixed-epoch zip
+   timestamps never leak into user-visible diffs (they do--that is the
+   POINT for byte identity).
+8. **What should be redesigned before continuing?** The declared-dtype
+   read-path gap (#2 above) should close before any non-f32 parameter
+   exists; likewise optimizer-state serialization design (moment arrays
+   keyed how? Adam state is keyed by id() today -- a serialization
+   redesign must come with key-by-parameter-NAME, which is itself a
+   Decision).
+9. **What should NOT be implemented yet?** safetensors interop, GC-
+   addressable sparsity, sharded multi-file checkpoints, encryption/
+   signing of checkpoints, and versioning N>2 formats -- one good binary
+   format plus the JSON debug format is the correct footing.
+10. **What evidence supports current claims?** `pytest -q` = 402 passing:
+    tests/test_checkpoint_bin.py (11: byte-identity, sub-25% size on a
+    10k-param model, round-trip values/shapes, byte-exact SGD resume
+    theorem, extension-independent loading, JSON compat intact, and 6
+    corruption-rejection tests), plus the untouched v1 suite and 391 prior
+    tests -- all green after the sniffing change to load().

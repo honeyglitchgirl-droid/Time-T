@@ -1,18 +1,28 @@
 """Checkpointing: save/load model parameters (master prompt section 24-lite).
 
-Format: a single deterministic JSON file (versioned, human-inspectable,
-diff-friendly). This is deliberately simple and honest about its limits:
-floats are stored as decimal lists, so files are large and loading is slow
-for big models. It is intended for the small models Time-T can actually
-train today (see docs/ROADMAP.md). A binary format (e.g. safetensors-style)
-is future work and will be documented as a Design Decision before it lands.
+Formats (two, deliberately):
+  v1 ".json" -- a single deterministic JSON file (versioned,
+      human-inspectable, diff-friendly). Floats are stored as decimal
+      lists: files are large and loading is slow for big models.
+  v2 ".ttck" -- a deterministic zip containing manifest.json plus raw
+      little-endian f32 .npy payloads (DD-20). Chosen over the npz
+      SHORTCUT of np.savez_compressed because that does not pin
+      timestamps/headers: two npz saves of identical parameters can
+      differ at the byte level. v2 fixes every zip timestamp to the DOS
+      epoch (1980-01-01) and sorts entries, so byte-identity holds.
+      HONEST LIMITS: parameter names must be unique (true for all
+      current models); non-f32 arrays are CAST to f32 with the original
+      dtype merely declared, not restored; dtype metadata beyond f32 is
+      future work (see ROADMAP Milestone 8).
 
-Determinism: keys are sorted, floats round-trip exactly via repr(), and the
-same parameters always produce byte-identical files (verified by tests).
+Determinism: keys are sorted; v1 floats round-trip exactly via repr();
+same parameters -> byte-identical file under BOTH formats (tested).
 """
 from __future__ import annotations
 
+import io
 import json
+import zipfile
 from pathlib import Path
 from typing import Dict, List, Union
 
@@ -23,6 +33,9 @@ from timet.diagnostics import Diagnostic
 
 FORMAT = "timet-checkpoint"
 VERSION = 1
+BIN_FORMAT = "timet-checkpoint-bin"
+BIN_VERSION = 2
+_ZIP_EPOCH = (1980, 1, 1, 0, 0, 0)  # fixed DOS-epoch stamp for byte-identity
 
 
 class CheckpointError(Diagnostic):
@@ -115,7 +128,12 @@ def save(target, path: Union[str, Path]) -> Path:
 def load(path: Union[str, Path]) -> Dict[str, Tensor]:
     """Load a checkpoint file into {name: Tensor} (no model required)."""
     path = Path(path)
+    # format detection by CONTENT (zip magic), not extension:
+    # mis-named files still load correctly.
     try:
+        with open(path, "rb") as fh:
+            if fh.read(2) == b"PK":
+                return load_bin(path)
         payload = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as e:
         raise CheckpointError(code="E0623", message=f"cannot read checkpoint: {e}",
@@ -176,3 +194,101 @@ def load_into(target, path: Union[str, Path], strict: bool = True):
             )
         t.data = src.data.astype(t.data.dtype)
     return target
+
+
+
+# --------------------------------------------------------------------------- #
+# v2: deterministic binary format (DD-20): zip + manifest.json + raw npy,
+# fixed zip timestamps + sorted entries so byte-identity is part of FORMAT.
+# --------------------------------------------------------------------------- #
+def save_bin(target, path: Union[str, Path]) -> Path:
+    """Save parameters as a deterministic binary checkpoint (.ttck).
+
+    Arrays are stored little-endian f32 (other dtypes are cast; the original
+    dtype is DECLARED in the manifest but not restored -- honest limit).
+    Same parameters -> byte-identical file across runs.
+    """
+    named = _name_parameters(target)
+    arrays: Dict[str, np.ndarray] = {}
+    declared: Dict[str, dict] = {}
+    for name, ten in named.items():
+        arr = np.asarray(ten.data)
+        declared[name] = {"shape": list(arr.shape), "dtype": str(arr.dtype),
+                          "stored_dtype": "float32"}
+        arrays[name] = arr.astype(np.float32)
+    manifest = {
+        "format": BIN_FORMAT,
+        "version": BIN_VERSION,
+        "iteration_scheme": "name-sorted zip entries; raw little-endian f32 payloads",
+        "tensors": declared,
+        "limits": [
+            "all values stored as little-endian f32 (original dtype declared, not restored)",
+            "parameter names must be unique across the model",
+        ],
+    }
+    mbytes = (json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
+        info = zipfile.ZipInfo("manifest.json", date_time=_ZIP_EPOCH)
+        info.compress_type = zipfile.ZIP_DEFLATED
+        info.external_attr = 0
+        zf.writestr(info, mbytes)
+        for name in sorted(arrays):
+            raw = io.BytesIO()
+            np.save(raw, arrays[name], allow_pickle=False)
+            info = zipfile.ZipInfo(f"tensors/{name}.npy", date_time=_ZIP_EPOCH)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0
+            zf.writestr(info, raw.getvalue())
+    path = Path(path)
+    path.write_bytes(buf.getvalue())
+    return path
+
+
+def load_bin(path: Union[str, Path]) -> Dict[str, Tensor]:
+    """Load a v2 binary checkpoint. Content-checked against its manifest:
+    extra OR missing entries are structural errors (E0648), not warnings."""
+    path = Path(path)
+    try:
+        zf = zipfile.ZipFile(path, "r")
+    except (OSError, zipfile.BadZipFile) as e:
+        raise CheckpointError(code="E0645",
+                              message=f"cannot read binary checkpoint: {e}",
+                              stage="checkpoint")
+    with zf:
+        names = set(zf.namelist())
+        if "manifest.json" not in names:
+            raise CheckpointError(code="E0646",
+                                  message="binary checkpoint missing manifest.json",
+                                  stage="checkpoint")
+        manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
+        if manifest.get("format") != BIN_FORMAT:
+            raise CheckpointError(code="E0647",
+                                  message=f"unsupported binary checkpoint format "
+                                          f"{manifest.get('format')!r}",
+                                  stage="checkpoint")
+        if manifest.get("version") != BIN_VERSION:
+            raise CheckpointError(code="E0648",
+                                  message=f"unsupported binary checkpoint version "
+                                          f"{manifest.get('version')} (expected {BIN_VERSION})",
+                                  stage="checkpoint")
+        declared = manifest.get("tensors", {})
+        expected = {"manifest.json"} | {f"tensors/{n}.npy" for n in declared}
+        if names != expected:
+            extra = names - expected
+            missing = expected - names
+            raise CheckpointError(code="E0648",
+                                  message=f"binary checkpoint contents mismatch "
+                                          f"(extra={sorted(extra)}, missing={sorted(missing)})",
+                                  stage="checkpoint")
+        out: Dict[str, Tensor] = {}
+        for name in sorted(declared):
+            arr = np.load(io.BytesIO(zf.read(f"tensors/{name}.npy")), allow_pickle=False)
+            shape = declared[name].get("shape")
+            if shape is not None and list(arr.shape) != list(shape):
+                raise CheckpointError(code="E0648",
+                                      message=f"tensor '{name}' shape {list(arr.shape)} "
+                                              f"!= manifest {shape}",
+                                      stage="checkpoint")
+            out[name] = Tensor(arr, dtype="f32", requires_grad=True)
+        return out

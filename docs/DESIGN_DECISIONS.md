@@ -516,3 +516,34 @@ at the repo's standard 1e-3 tolerance.
 4. Val loss means simple mean over val batches (same approximation as
    train, DD-18 item); series live in `history.val_losses`, distinct from
    train  `history.losses`, so curves can't be confused downstream.
+
+
+---
+
+## DD-20: Binary checkpoint format v2 (.ttck)
+
+**Decisions (v0.8.0):**
+1. `.ttck` is a deterministic zip: `manifest.json` (sorted keys) + raw
+   little-endian f32 `.npy` payloads per parameter, zip timestamps FIXED
+   to the DOS epoch and entries name-sorted, so byte-identity across runs
+   is part of the format (same guarantee v1 makes for JSON).
+   np.savez_compressed was REJECTED as the format: it inherits zip
+   timestamps and header nondeterminism, and two saves of identical
+   parameters can differ at the byte level.
+2. Content-sniffed loading (zip magic), never extension-sniffed --
+   mis-named files still load (tested with a `.weird` extension).
+3. The manifest is the single source of structure: unknown/extra/missing
+   zip entries are E0648 structural errors, declared-vs-actual shape
+   mismatches are E0648, wrong format/version keys are E0647/E0648,
+   truncation is E0645. Corruption never silently becomes "a few params
+   at random values".
+4. All values stored f32; original dtype is DECLARED in the manifest but
+   not restored (honest limit, listed IN the manifest itself). Today's
+   entire parameter space is f32, so this loses nothing real.
+5. **Finding recorded while testing (matters for every future claim):**
+   the v1 "resume theorem" holds ONLY for parameter-stateless optimizers
+   (SGD). Re-proving it for v2 with Adam FAILS -- fresh Adam moments take
+   a different trajectory than continuous Adam (0.35 max param deviation
+   observed on the canonical task). Optimizer-state checkpointing is now
+   explicitly and prominently NOT DONE in both formats, and the v2
+   theorem is pinned with SGD byte-exactly.

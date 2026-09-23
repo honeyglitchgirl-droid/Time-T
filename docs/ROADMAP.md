@@ -124,8 +124,15 @@ reproduce every claim below.
   the val pass (mode restored; probe-pinned), and `EarlyStopping` monitor
   selection ('loss'/'val_loss'/metric, E0643 on monitor-without-data,
   never silent fallback). Train/val phases share ONE `_run_epoch` loop.
-- NOT DONE: training-run log format, binary checkpoint format (needed
-  for larger models), optimizer+RNG-state resume, distributed anything.
+- EXPANDED (v0.8.0, DD-20): binary checkpoint format v2 (`.ttck`:
+  deterministic zip of manifest + raw f32 .npy entries, byte-identical
+  saves, content-sniffed loading of both v1/v2, manifest-integrity
+  errors E0645--E0648). Resume theorem re-proven for v2 WITH PLAIN SGD
+  only -- Adam's moments aren't checkpointed by either format, and an
+  Adam version of the theorem was falsified while testing (DD-20).
+- NOT DONE: optimizer-state (Adam moments) + RNG-stream checkpointing,
+  training-run log format, dtype-faithful binary storage (>f32),
+  distributed anything.
 
 ## Milestone 9 — Native optimization 🟡 PARTIAL (started v0.4.0)
 - DONE (v0.4.0): a working native path — `timet/native.py` C-emitter over
