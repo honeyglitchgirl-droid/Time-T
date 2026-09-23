@@ -1,0 +1,39 @@
+// Example 6: XOR, trained with a tiny hand-written 2-layer network using
+// raw tensor + autodiff primitives (Time-T's nn/optim convenience layer is
+// a Python-side API today, see docs/ROADMAP.md Milestone 7).
+fn main() {
+    let x = tensor([[0.0, 0.0], [0.0, 1.0], [1.0, 0.0], [1.0, 1.0]])
+    let y = tensor([[0.0], [1.0], [1.0], [0.0]])
+
+    var w1 = tensor([[0.5, -0.5], [-0.5, 0.5]], grad=true)
+    var b1 = tensor([0.1, -0.1], grad=true)
+    var w2 = tensor([[0.7], [0.7]], grad=true)
+    var b2 = tensor([0.0], grad=true)
+
+    var step = 0
+    while step < 1000 {
+        let h = (x.matmul(w1) + b1).relu()
+        let pred = h.matmul(w2) + b2
+        let diff = pred - y
+        let loss = mean(diff * diff)
+
+        loss.backward()
+
+        no_grad {
+            w1.sub_(w1.grad * 0.1)
+            b1.sub_(b1.grad * 0.1)
+            w2.sub_(w2.grad * 0.1)
+            b2.sub_(b2.grad * 0.1)
+        }
+        w1.zero_grad()
+        b1.zero_grad()
+        w2.zero_grad()
+        b2.zero_grad()
+
+        step = step + 1
+    }
+
+    let h = (x.matmul(w1) + b1).relu()
+    let pred = h.matmul(w2) + b2
+    print(pred)
+}
