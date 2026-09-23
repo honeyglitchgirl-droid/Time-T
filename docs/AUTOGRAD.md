@@ -38,7 +38,7 @@ Every backward rule has:
   `docs/DESIGN_DECISIONS.md` DD-7 (`rtol=1e-3, atol=1e-4`), and reporting max
   absolute/relative error on failure — never a bare `assert`.
 
-## Known correctness caveat: ReLU at x = 0
+## Known correctness caveats: kink points
 
 ReLU's gradient at exactly `x = 0` is mathematically undefined (subgradient
 ∈ [0, 1]); this implementation returns `0` there (via `x > 0`), matching the
@@ -47,6 +47,14 @@ exactly in test inputs, since a symmetric finite difference straddling the
 kink does not have a single "correct" value to compare against either
 subgradient choice — this is documented here rather than papered over with a
 looser tolerance.
+
+The same applies (v0.2.0) to `clip` at its clamp boundaries and
+`max`/`min` at ties: gradient checks avoid exact kink inputs, and the
+implementation returns the PyTorch-convention subgradient (strictly-inside
+mask for `clip`, even split across ties for `max`/`min`).
+
+Non-differentiable-by-design ops: `argmax` and `one_hot` carry no gradient
+at all (they produce indices/constants), matching standard frameworks.
 
 ## What's not implemented yet
 

@@ -8,9 +8,16 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 import timet.ast_nodes as A
+from timet import nn as nn_lib
+from timet import optim as optim_lib
 from timet import tensor as T
+from timet import train as train_lib
 from timet.autodiff import no_grad
 from timet.diagnostics import Diagnostic, SourceSpan
+
+#: Module objects pre-bound in every program's global scope (DD-10). They
+#: are ordinary values, so `nn.Linear(2, 8)` is a field access + call.
+ENGINE_GLOBALS = {"nn": nn_lib, "optim": optim_lib, "train": train_lib}
 
 
 class RuntimeErr(Diagnostic):
@@ -74,6 +81,8 @@ class Environment:
 class Interpreter:
     def __init__(self, stdout_write=None):
         self.globals = Environment()
+        for name, value in ENGINE_GLOBALS.items():
+            self.globals.define(name, value)
         self._stdout_write = stdout_write or (lambda s: print(s))
 
     def run(self, program: A.Program):
@@ -276,6 +285,10 @@ class Interpreter:
             fn = env.get(name, SourceSpan(expr.line, expr.col))
             if isinstance(fn, Function):
                 return self.call_function(fn, args, kwargs, SourceSpan(expr.line, expr.col))
+            # host callables: nn.Linear, optim.Adam, an nn.Module instance
+            # (model(x)), etc. (DD-10)
+            if callable(fn):
+                return fn(*args, **kwargs)
             raise RuntimeErr(
                 code="E0503",
                 message=f"'{name}' is not callable",
@@ -285,6 +298,8 @@ class Interpreter:
         callee = self.eval(expr.callee, env)
         if isinstance(callee, Function):
             return self.call_function(callee, args, kwargs, SourceSpan(expr.line, expr.col))
+        if callable(callee):
+            return callee(*args, **kwargs)
         raise RuntimeErr(
             code="E0504",
             message="call target is not callable",
@@ -333,6 +348,9 @@ class Interpreter:
             "sigmoid": T.sigmoid,
             "tanh": T.tanh,
             "softmax": T.softmax,
+            "log_softmax": T.log_softmax,
+            "argmax": T.argmax,
+            "one_hot": T.one_hot,
             "exp": T.exp,
             "log": T.log,
             "sqrt": T.sqrt,

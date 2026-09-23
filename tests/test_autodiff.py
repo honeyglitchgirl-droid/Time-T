@@ -192,3 +192,39 @@ def test_gradient_accumulates_across_multiple_uses():
     y = (x + x).sum()  # dy/dx = 2 for each use, total should be 2 (not 4, not 1)
     y.backward()
     assert_close(x.grad.data, [2.0, 2.0], msg="shared-tensor gradient accumulation")
+
+
+def test_grad_clip():
+    # Inputs strictly inside the clamp interval (finite differences near the
+    # boundary would straddle the kink, like ReLU at 0 -- see test_grad_relu).
+    x_np = np.array([-0.5, -0.3, 0.1, 0.3], dtype=np.float32)
+
+    def fwd(x):
+        return (x.clip(-1.0, 1.0) * x.clip(-1.0, 1.0)).sum()
+
+    def fwd_np(x):
+        c = np.clip(x, -1.0, 1.0)
+        return float((c * c).sum())
+
+    _check_grad(fwd, fwd_np, x_np, "clip gradient")
+
+
+def test_grad_clip_saturated_region_is_zero():
+    x = Tensor([5.0], requires_grad=True)
+    y = (x.clip(-1.0, 1.0)).sum()
+    y.backward()
+    assert_close(x.grad.data, [0.0], msg="clip gradient in saturated region")
+
+
+def test_grad_log_softmax():
+    x_np = np.array([[0.3, -1.2, 0.7], [2.0, 0.1, -0.4]], dtype=np.float32)
+
+    def fwd(x):
+        return (x.log_softmax(axis=-1) * x.log_softmax(axis=-1)).sum()
+
+    def fwd_np(x):
+        m = x.max(axis=-1, keepdims=True)
+        ls = (x - m) - np.log(np.exp(x - m).sum(axis=-1, keepdims=True))
+        return float((ls * ls).sum())
+
+    _check_grad(fwd, fwd_np, x_np, "log_softmax gradient")

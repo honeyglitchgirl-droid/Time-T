@@ -296,6 +296,22 @@ class Tensor:
     def tanh(self):
         return self._unop(np.tanh, lambda g, x, y: g * (1 - y * y), "tanh")
 
+    def clip(self, min_val: float, max_val: float) -> "Tensor":
+        """Elementwise clamp to [min_val, max_val].
+
+        Backward rule: gradient passes through where data is strictly inside
+        the interval and is zero outside/at the boundary (same convention as
+        PyTorch's clamp). Finite-difference tested away from boundaries.
+        """
+        def fwd(x):
+            return np.clip(x, min_val, max_val)
+
+        return self._unop(
+            fwd,
+            lambda g, x, y: g * ((x > min_val) & (x < max_val)).astype(np.float32),
+            "clip",
+        )
+
     def softmax(self, axis: int = -1):
         def fwd(x):
             shifted = x - np.max(x, axis=axis, keepdims=True)
@@ -312,6 +328,17 @@ class Tensor:
         return self._make_result(y, [self], backward_fn, "softmax")
 
     # ---------------- reductions ----------------
+
+    def log_softmax(self, axis: int = -1) -> "Tensor":
+        """Numerically stable log-softmax, composed from primitive ops so the
+        backward pass comes for free from their verified gradient rules:
+            log_softmax(x) = (x - max(x)) - log(sum(exp(x - max(x))))
+        See docs/TENSOR.md.
+        """
+        m = self.max(axis=axis, keepdims=True)
+        shifted = self - m
+        lse = shifted.exp().sum(axis=axis, keepdims=True).log()
+        return shifted - lse
 
     def sum(self, axis=None, keepdims: bool = False) -> "Tensor":
         result = self.data.sum(axis=axis, keepdims=keepdims)
@@ -348,6 +375,15 @@ class Tensor:
             return (np.broadcast_to(g, in_shape).astype(np.float32).copy(),)
 
         return self._make_result(np.asarray(result), [self], backward_fn, "mean")
+
+    def argmax(self, axis: Optional[int] = None) -> "Tensor":
+        """Index of the maximum value. Not differentiable (returns int indices).
+
+        Gradient does not flow through argmax -- this mirrors PyTorch, and is
+        documented in docs/AUTOGRAD.md.
+        """
+        idx = np.argmax(self.data, axis=axis)
+        return Tensor(idx, dtype="i64")
 
     def max(self, axis=None, keepdims: bool = False) -> "Tensor":
         return self._reduce_extreme(np.max, axis, keepdims, "max")
@@ -478,6 +514,42 @@ def tanh(t: Tensor) -> Tensor:
 
 def softmax(t: Tensor, axis: int = -1) -> Tensor:
     return t.softmax(axis=axis)
+
+
+def log_softmax(t: Tensor, axis: int = -1) -> Tensor:
+    return t.log_softmax(axis=axis)
+
+
+def argmax(t: Tensor, axis: Optional[int] = None) -> Tensor:
+    return t.argmax(axis=axis)
+
+
+def one_hot(indices, num_classes: int) -> Tensor:
+    """One-hot encode class indices. Non-differentiable lookup (dtype f32).
+
+    `indices` may be a python list of ints, a NumPy array, or an integer
+    Tensor. Result shape: indices.shape + (num_classes,).
+    """
+    if isinstance(indices, Tensor):
+        idx = indices.data.astype(np.int64)
+    else:
+        idx = np.asarray(indices, dtype=np.int64)
+    if num_classes <= 0:
+        raise TensorError(
+            code="E0600",
+            message=f"one_hot: num_classes must be positive, got {num_classes}",
+            stage="tensor",
+        )
+    if idx.size and (idx.min() < 0 or idx.max() >= num_classes):
+        raise TensorError(
+            code="E0601",
+            message=f"one_hot: class index out of range [0, {num_classes})",
+            stage="tensor",
+        )
+    out = np.zeros(idx.shape + (num_classes,), dtype=np.float32)
+    if idx.size:
+        np.put_along_axis(out, idx[..., None], 1.0, axis=-1)
+    return Tensor(out)
 
 
 def exp(t: Tensor) -> Tensor:

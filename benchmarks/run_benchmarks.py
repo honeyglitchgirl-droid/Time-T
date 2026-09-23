@@ -83,6 +83,28 @@ def bench_autodiff_backward(n=100_000):
     return {"name": "autodiff_backward_sum_square", "seconds": t, "note": f"n={n}"}
 
 
+def bench_mlp_train_step():
+    """One full-batch training step (forward + CE backward + Adam step) of a
+    small MLP -- the workload examples/05-07 are built from."""
+    from timet.nn import Linear, Tanh, Sequential, CrossEntropyLoss
+    from timet.optim import Adam
+
+    x = Tensor(np.random.default_rng(0).normal(size=(128, 2)).astype(np.float32))
+    y = np.random.default_rng(1).integers(0, 2, size=128)
+    model = Sequential(Linear(2, 16, seed=0), Tanh(), Linear(16, 2, seed=1))
+    loss_fn = CrossEntropyLoss()
+    opt = Adam(model.parameters(), lr=0.01)
+
+    def run():
+        loss = loss_fn(model(x), y)
+        loss.backward()
+        opt.step()
+        opt.zero_grad()
+    t = _time_it(run, repeats=3)
+    return {"name": "mlp_train_step_128x2_adam", "seconds": t,
+            "note": "full-batch fwd+bwd+step, 2-16-2 MLP"}
+
+
 def run_all() -> dict:
     benches = [
         bench_scalar_add(),
@@ -91,6 +113,7 @@ def run_all() -> dict:
         bench_matmul(256),
         bench_reduction(),
         bench_autodiff_backward(),
+        bench_mlp_train_step(),
     ]
     result = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

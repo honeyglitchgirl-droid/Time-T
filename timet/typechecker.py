@@ -58,8 +58,13 @@ TENSOR_METHODS = {
 BUILTIN_FUNCS = {
     "print", "len", "tensor", "zeros", "ones", "assert",
     "sum", "mean", "max", "min", "exp", "log", "sqrt", "relu", "sigmoid",
-    "tanh", "softmax", "matmul",
+    "tanh", "softmax", "log_softmax", "argmax", "one_hot", "matmul",
 }
+
+#: Names pre-bound to host modules by the engine (interpreter and IR
+#: executor). Members are accessed dynamically, so anything reached through
+#: them is currently typed TUnknown (documented in docs/LANGUAGE.md DD-10).
+BUILTIN_MODULES = {"nn", "optim", "train"}
 
 
 def _resolve_type_expr(te: A.TypeExpr) -> Type:
@@ -126,9 +131,12 @@ class TypeChecker:
             self._require(cond_ty, TBool(), stmt.cond, "while condition")
             self.check_block(stmt.body, scope.child())
         elif isinstance(stmt, A.ForStmt):
-            self.infer(stmt.iterable, scope)
+            it_ty = self.infer(stmt.iterable, scope)
+            # Iterating a Tensor yields (possibly 0-d) Tensor slices of the
+            # same dtype -- mirror the runtime (Tensor.__getitem__).
+            el_ty = TTensor(it_ty.dtype) if isinstance(it_ty, TTensor) else TUnknown()
             inner = scope.child()
-            inner.define(stmt.var_name, TUnknown(), mutable=False)
+            inner.define(stmt.var_name, el_ty, mutable=False)
             self.check_block(stmt.body, inner)
         elif isinstance(stmt, A.NoGradStmt):
             self.check_block(stmt.body, scope.child())
@@ -224,6 +232,8 @@ class TypeChecker:
         if isinstance(expr, A.UnitLit):
             return TUnit()
         if isinstance(expr, A.Ident):
+            if expr.name in BUILTIN_MODULES:
+                return TUnknown()  # host module value; members typed dynamically
             binding = scope.lookup(expr.name)
             if binding is None:
                 raise TypeError_(
@@ -370,6 +380,13 @@ class TypeChecker:
         recv_ty = self.infer(expr.receiver, scope)
         for a in expr.args:
             self.infer(a, scope)
+        if expr.method == "backward":
+            return TUnit()
+        if expr.method == "item":
+            # scalar extraction: dtype f32/f64 -> Float, i32/i64 -> Int
+            if isinstance(recv_ty, TTensor) and recv_ty.dtype.startswith("i"):
+                return TInt()
+            return TFloat()
         if expr.method in ("sum", "mean", "max", "min") and not expr.args:
             return TTensor(recv_ty.dtype if isinstance(recv_ty, TTensor) else "f32")
         if expr.method in TENSOR_METHODS:
@@ -378,8 +395,11 @@ class TypeChecker:
 
     def _builtin_return_type(self, name: str) -> Type:
         if name in ("tensor", "zeros", "ones", "sum", "mean", "max", "min",
-                    "exp", "log", "sqrt", "relu", "sigmoid", "tanh", "softmax", "matmul"):
+                    "exp", "log", "sqrt", "relu", "sigmoid", "tanh", "softmax",
+                    "log_softmax", "one_hot", "matmul"):
             return TTensor("f32")
+        if name == "argmax":
+            return TTensor("i64")
         if name == "len":
             return TInt()
         if name in ("print", "assert"):

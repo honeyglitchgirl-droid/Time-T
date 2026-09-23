@@ -51,6 +51,10 @@ finite-difference gradient check (`tests/test_autodiff.py`).
 | `sigmoid` | `1/(1+e^-x)` | `g * y * (1-y)` |
 | `tanh` | `tanh(x)` | `g * (1 - y^2)` |
 | `softmax` | row-wise softmax | Jacobian-vector product `y*(g - sum(g*y))` |
+| `log_softmax` | stable `log(softmax(x))` via max-shift | composed from the verified primitive rules (v0.2.0) |
+| `clip` | clamp to `[min, max]` | `g` where strictly inside, else `0` (v0.2.0) |
+| `argmax` | index of max (i64) | NOT differentiable — no gradient flows (v0.2.0) |
+| `one_hot` | class-index → one-hot (f32) | NOT differentiable — constant lookup (v0.2.0) |
 | `reshape` | reshape | reshape `g` back to input shape |
 | `transpose`/`permute` | axis permutation | inverse permutation of `g` |
 | `broadcast_to` | explicit broadcast | sum-reduce `g` back to input shape |

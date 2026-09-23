@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-09-23T12:53:37Z",
+  "timestamp": "2026-09-23T14:12:30Z",
   "platform": {
     "processor": "",
     "machine": "x86_64",
@@ -10,33 +10,38 @@
   "benchmarks": [
     {
       "name": "scalar_add_loop",
-      "seconds": 0.010349011000016617,
+      "seconds": 0.0056542389993410325,
       "note": "n=200000 python scalar adds"
     },
     {
       "name": "tensor_vector_add",
-      "seconds": 0.0006072549999771581,
+      "seconds": 0.0005099290001453483,
       "note": "n=1000000 f32 elementwise add"
     },
     {
       "name": "matmul_64x64",
-      "seconds": 1.5436000012414297e-05,
-      "note": "~33.97 GFLOP/s (naive estimate)"
+      "seconds": 1.5982000149961095e-05,
+      "note": "~32.80 GFLOP/s (naive estimate)"
     },
     {
       "name": "matmul_256x256",
-      "seconds": 0.0003531190000103379,
-      "note": "~95.02 GFLOP/s (naive estimate)"
+      "seconds": 0.00016631300059088971,
+      "note": "~201.75 GFLOP/s (naive estimate)"
     },
     {
       "name": "tensor_sum_reduction",
-      "seconds": 0.00045310700011214067,
+      "seconds": 0.00022066400015319232,
       "note": "n=1000000"
     },
     {
       "name": "autodiff_backward_sum_square",
-      "seconds": 0.0006784199999856355,
+      "seconds": 0.0003994189992226893,
       "note": "n=100000"
+    },
+    {
+      "name": "mlp_train_step_128x2_adam",
+      "seconds": 0.000564301999474992,
+      "note": "full-batch fwd+bwd+step, 2-16-2 MLP"
     }
   ]
 }

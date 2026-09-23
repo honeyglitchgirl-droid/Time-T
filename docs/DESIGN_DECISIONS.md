@@ -185,3 +185,99 @@ exit non-zero. They never silently succeed or print fabricated output.
 **Why:** §26 and §38 ("do not mark incomplete systems as complete") — an
 AI agent or human scripting against the CLI must be able to trust that a
 non-error exit code means the operation actually happened.
+
+---
+
+## DD-9: IR is executed via a structured block-tree interpreter (supersedes part of DD-3)
+
+**Status update (v0.2.0):** DD-3's "the IR is not executed" is no longer
+true. The IR is now directly executable (`timet/ir_exec.py`) and optimized
+(`timet/optimize.py`); everything else in DD-3 (AST interpreter remains the
+semantic reference; no backend IR lowering yet) still holds.
+
+**Decision:** IR control flow uses STRUCTURED markers
+(`if_begin`/`else`/`if_end`, `while_begin`/`while_check`/`while_end`,
+`for_begin`/`for_end`, `nograd_begin`/`nograd_end`) which the executor
+parses into a block tree. Loop conditions are lowered INSIDE the loop
+region, so they re-execute every iteration by construction (a flat
+"evaluate-cond-once" lowering would be an infinite loop). Mutable `var`s
+lower to named storage (`var_def`/`store`/`load`) in chained frames
+(mirroring the interpreter's Environment chain); immutable `let`s stay
+SSA temps.
+
+**Deliberate limits (executor raises `IrExecError`, never guesses):**
+lambdas, nested `fn` declarations, and if-EXPRESSIONS are not lowered;
+`&&`/`||` are eager (not short-circuiting) in IR; a `var` declared in a
+nested block shares the flat frame storage rather than being scoped out.
+The differential suite (`tests/test_ir_exec_diff.py`) pins AST vs IR-O0 vs
+IR-O1 output equality on every example plus generated random programs, so
+any future extension of the lowered subset is verified, not assumed.
+
+**Why structured markers instead of basic blocks + jumps:** the IR consumer
+list so far (inspector, executor, local optimizations) is better served by
+the simplest representation that is still executable. A CFG form is future
+work (DD candidate for Milestone 9 native codegen).
+
+---
+
+## DD-10: Host-library exposure (`nn` / `optim` / `train`) as pre-bound global values
+
+**Decision:** Time-T programs reach the neural-net library through three
+pre-bound global names (`nn`, `optim`, `train`) — plain Python module
+objects injected into the global scope by both engines. `nn.Linear(2, 8)`
+is a field access + a call of a host callable; no new syntax and no module
+system was invented for this. Type checking treats these as `TUnknown`
+(they are typed dynamically), which is documented in docs/LANGUAGE.md.
+
+**Why:** Milestone 2's real module system (import, namespacing) is not
+built yet, and faking one would violate §38. Pre-bound values give real,
+testable NN capability from Time-T code TODAY (see
+`examples/07_xor_classifier.tt`, which trains with Adam + cross-entropy and
+runs byte-identically on AST, IR-O0, and IR-O1 engines) without pretending
+to be a user-extensible import mechanism.
+
+**Consequences:** user code cannot currently define its own modules; that
+remains roadmap work. Static typing across the `nn.*` boundary is
+explicitly deferred (TUnknown flows through, no false confidence).
+
+---
+
+## DD-11: Checkpoints are versioned, deterministic JSON (not a binary format)
+
+**Decision:** `timet/checkpoint.py` saves parameters as a single JSON file:
+`{"format": "timet-checkpoint", "version": 1, "tensors": {name: {dtype,
+shape, data}}}` with sorted keys and round-trip-exact floats. Byte-identical
+files for identical models (tested). `load_into` verifies format, version,
+key sets (strict mode), and shapes, and reports the offending key name.
+
+**Why:** the models Time-T can actually train today are tiny (examples are
+2-8-2 MLPs). JSON is inspectable, diffable, dependency-free, and honest.
+For large models this format is wrong (file size, parse cost) — the
+ROADMAP lists a binary tensor format as future work, to be designed as its
+own DD before implementation (§3: architecture before code).
+
+---
+
+## DD-12: The O1 optimizer uses only local, order-independent-safe passes
+
+**Decision:** `timet/optimize.py` implements constant folding, restricted
+algebraic simplification, segment-local CSE, segment-local copy
+propagation, and one-backward-sweep DCE. CSE/copy-propagation NEVER cross
+structured-control markers (a value computed in one branch must not be
+assumed available in another), loads are invalidated by intervening stores,
+and algebraic rules are type-aware:
+
+- `x + 0` / `x - 0` folded for Int only (for Float it changes `-0.0` to
+  `+0.0`);
+- `x * 1` folded for Int and Float (exact IEEE identity, NaN-safe);
+- `x / 1` folded for Float-typed ops only (Python `7 / 1` is a Float; an
+  Int-div result copy would change the value's type);
+- `x * 0` is NEVER folded (NaN/Inf inputs);
+- `1 / 0` is never folded to a compile-time error — it stays a runtime
+  error, exactly as in the interpreter.
+
+**Why:** these five passes are individually verifiable and compose into a
+pipeline whose total effect is checked END-TO-END by the differential suite
+(IR-O0 vs IR-O1 byte-identical output on all examples + random programs).
+Anything interprocedural or requiring dataflow analysis (inlining, LICM,
+fusion) is explicitly out of scope until a CFG form exists (DD-9).

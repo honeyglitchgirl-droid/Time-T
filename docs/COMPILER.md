@@ -48,16 +48,47 @@ incrementing temporary counter (`%t0, %t1, ...`), which is what makes
 lowering deterministic given identical input (verified in
 `tests/test_ir.py::test_deterministic_lowering`).
 
-Statement kinds not yet fully lowered (`for`, `no_grad`, nested `fn`) emit an
-explicit `unsupported_stmt`/`unsupported_expr` marker instruction carrying
-the AST node kind in `attrs` — this makes the gap visible in `--ir` dumps
-rather than silently dropping code, which would be worse than an honest
-"not lowered yet" marker.
+Since v0.2.0, lowering also covers: `while` (with the condition instructions
+placed INSIDE the loop region so the IR executor re-evaluates them per
+iteration), `for` (as `for_begin`/`for_end` with an item temp), `no_grad`
+(as region markers), keyword arguments, dynamic calls, `var` bindings as
+named storage (`var_def`/`store`/`load` — required for correct loop-carried
+mutation), and top-level statements (folded into a synthetic `__main__`
+function so a whole program is executable as IR).
+
+Statement/expression kinds still not lowered (nested `fn` declarations,
+lambdas, if-EXPRESSIONS) emit an explicit `unsupported_stmt`/
+`unsupported_expr` marker instruction carrying the AST node kind in `attrs`
+— this makes the gap visible in `--ir` dumps, and the IR executor raises a
+clear `IrExecError` naming the construct instead of silently running
+something wrong.
+
+## IR execution (`timet/ir_exec.py`) — v0.2.0
+
+The IR is directly executable: `time-t run <file> --via-ir [-O 0|1]`.
+Structured control markers are parsed into a block tree (`_build_tree`);
+mutable variables live in chained named-storage frames mirroring the AST
+interpreter's `Environment`; a user-defined `fn main()` is invoked after
+top-level statements, exactly like the AST engine. Correctness is not
+asserted but measured: `tests/test_ir_exec_diff.py` requires byte-identical
+stdout across AST interpreter, IR-O0, and IR-O1 for every example program
+and for generated random programs. Deliberate limits: DD-9.
+
+## IR optimization (`timet/optimize.py`) — v0.2.0
+
+`-O 1` (the default for `--via-ir` and `inspect --ir --opt`) applies:
+constant folding, type-aware algebraic simplification, segment-local CSE,
+segment-local copy propagation, and dead-code elimination, followed by a
+final fold/DCE sweep. Every rule and its exact safety boundary (no
+`x*0`-folding because NaN/Inf; no `1/0`-folding because the error belongs
+at runtime; CSE/copy-prop never cross control markers; loads invalidated by
+intervening stores) is documented in DESIGN_DECISIONS.md DD-12. Passes
+report statistics (`OptStats`) shown by `inspect --ir --opt`.
 
 ## What is NOT part of the compiler yet
 
-- No optimization passes (constant folding, CSE, algebraic simplification,
-  inlining, fusion, dead-code elimination) run on the IR.
+- No inlining, loop-invariant motion, operator fusion, or anything needing
+  dataflow analysis (needs a CFG-form IR — DD-9/DD-12).
 - No lowering from IR to a lower-level form (bytecode or native code)
   exists; execution today happens directly off the typed AST via
   `timet/interpreter.py` (see `docs/DESIGN_DECISIONS.md` DD-3).

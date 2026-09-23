@@ -48,30 +48,59 @@ reproduce every claim below.
 - Worked example from the master prompt itself is a literal regression
   test: `x=[1,2,3]` grad, `y=sum(x*x)`, backward → `grad == [2,4,6]`.
 
-## Milestone 6 — IR + optimization 🟡 PARTIAL
-- DONE: `timet/ir.py` typed IR, lowering from typed AST, JSON
+## Milestone 6 — IR + optimization ✅ DONE (v0.2.0; hard limits documented)
+- DONE (v0.1.0): `timet/ir.py` typed IR, lowering from typed AST, JSON
   serialization, `time-t inspect --ir`.
-- NOT DONE: no optimization passes run on the IR yet (no constant folding,
-  CSE, algebraic simplification, inlining, fusion). The IR is not executed;
-  the interpreter still runs directly off the typed AST (DD-3). This is
-  intentionally sequenced after the language + autodiff foundation was
-  verified, per §3/§40 ("do not generate the entire project blindly").
-- Tests: `tests/test_ir.py` (lowering correctness + JSON round-trip +
-  determinism).
+- DONE (v0.2.0):
+  - The IR is **executable**: `timet/ir_exec.py` runs IR directly
+    (structured block-tree walk; `var`s via named storage frames, `let`s as
+    SSA temps). CLI: `time-t run <file> --via-ir [-O 0|1]`.
+  - The IR is **optimizable**: `timet/optimize.py` implements constant
+    folding, type-aware algebraic simplification, segment-local CSE and
+    copy propagation, and DCE — all documented with their exact safety
+    rules in DD-12 (e.g. `x*0` is never folded: NaN/Inf; `1/0` stays a
+    runtime error).
+  - Lowering extended: while-conditions live inside the loop region,
+    for-loops, `no_grad` regions, kwargs, dynamic calls, and top-level
+    statements (a synthetic `__main__` function).
+  - **Differentially verified**: AST interpreter vs IR-O0 vs IR-O1 must
+    produce byte-identical stdout on every example program AND on
+    generated random programs (`tests/test_ir_exec_diff.py`).
+- DELIBERATE LIMITS (executor fails loudly, never guesses): lambdas,
+  nested `fn` decls, if-expressions are not lowered; `&&`/`||` are eager in
+  IR; no inlining/fusion/LICM (needs dataflow/CFG — DD-9, DD-12).
+- Tests: `tests/test_ir.py`, `tests/test_ir_exec.py`,
+  `tests/test_optimize.py`, `tests/test_ir_exec_diff.py`.
 
-## Milestone 7 — Neural-network framework 🟡 MINIMAL START
-- DONE: `timet/nn.py` — `Linear`, `ReLU`, `Sequential`, `MSELoss`;
-  `timet/optim.py` — `SGD`. A linear-regression example and an XOR-MLP
-  example train and converge (see `examples/`, `tests/test_nn.py` — trains
-  for N steps and asserts loss decreases and crosses a threshold, with the
-  actual measured final loss printed, not assumed).
-- NOT DONE: Embedding, Conv1D/Conv2D, normalization layers, dropout,
-  attention/transformer blocks, Adam/AdamW, cross-entropy/BCE losses,
-  datasets/dataloaders, checkpoints, LR schedules, mixed precision.
+## Milestone 7 — Neural-network framework 🟡 PARTIAL (expanded v0.2.0)
+- DONE: `timet/nn.py` — layers `Linear`, `ReLU`, `Sigmoid`, `Tanh`,
+  `Softmax`, `Flatten`, `Dropout` (inverted, seeded = deterministic,
+  train/eval aware), `Sequential`; losses `MSELoss`, `CrossEntropyLoss`
+  (log-softmax + one-hot NLL, gradient finite-difference checked),
+  `BCELoss`; `Module.train()/eval()` recursion; functional conveniences
+  (`nn.cross_entropy_loss`, ...). `timet/optim.py` — `SGD`, `Adam` (with
+  bias correction; Adam convergence is asserted by a test that must reach
+  a loss threshold on XOR, with the measured value printed).
+- DONE (v0.2.0): the library is reachable FROM TIME-T CODE via the
+  pre-bound `nn`/`optim`/`train` globals (DD-10's documented bridge until a
+  real module system exists) — `examples/07_xor_classifier.tt` trains a
+  2-8-2 MLP+Adam+cross-entropy classifier to 100% XOR accuracy and runs
+  byte-identically on all three execution engines.
+- NOT DONE: Embedding, Conv1D/Conv2D, normalization layers,
+  attention/transformer blocks, AdamW, weights/init schemes beyond
+  Kaiming-uniform, mixed precision.
 
-## Milestone 8 — Training 🔲 NOT STARTED (beyond the minimal loop above)
-- No dataset/dataloader abstraction, no checkpoint/resume, no LR schedule,
-  no mixed precision, no training-run logging format yet.
+## Milestone 8 — Training 🟡 PARTIAL (started v0.2.0)
+- DONE: `timet/train.py` — `accuracy()` metric, `History`,
+  `fit()` (full-batch loop: forward → backward → step → zero_grad, logging
+  + pluggable metrics) and `EarlyStopping`. `timet/checkpoint.py` —
+  save/load/resume of parameters as deterministic, versioned JSON
+  (DD-11); resume correctness is proven by the train-20/save/restore/
+  train-30 == uninterrupted-train-50 test.
+- NOT DONE: datasets/dataloader abstraction (fit is FULL-BATCH ONLY and
+  says so), mini-batching, LR schedules, validation splits, mixed
+  precision, training-run log format, binary checkpoint format (needed for
+  larger models).
 
 ## Milestone 9 — Native optimization 🔲 NOT STARTED
 - No native codegen. Depends on Milestone 6 optimization passes existing
@@ -108,52 +137,6 @@ tree-walking Python interpreter; no claim is made about 1M+ parameter
 training throughput because it has not been measured. This will be updated
 only after real measurements are taken at larger scale.
 
-## Self-Criticism (Milestones 0–7, answering master prompt §39)
-
-1. **What works?** Lexer, parser, type checker, tree-walking interpreter,
-   NumPy-backed tensors with broadcasting, reverse-mode autodiff with
-   gradient-checked backward rules, a JSON-inspectable IR (unexecuted), a
-   minimal NN layer (Linear/ReLU/Sequential/MSELoss) + SGD that provably
-   trains (loss decreases, checked in tests), and a CLI (`check/run/test/
-   inspect/repl/bench`) with `--json` output.
-2. **What does not work / doesn't exist?** Modules, generics, traits, structs,
-   enums, pattern matching, static shape typing, IR optimization/execution,
-   native codegen, GPU/ARM64/mobile backends, C ABI/FFI, ONNX, package
-   manager, datasets/dataloaders, checkpoints, Adam/AdamW, attention layers.
-3. **What is untested?** REPL interactive edge cases beyond the smoke test;
-   very large tensors (memory pressure behavior); concurrent/thread-safety
-   (no concurrency primitives exist, so none is claimed); fuzzing currently
-   only covers lexer/parser, not IR (de)serialization or tensor indexing
-   edge cases (§30 asks for broader fuzzing — tracked, not done).
-4. **What is slow?** Everything, relative to a native compiler — this is a
-   Python tree-walking interpreter over NumPy. Matmul is only as fast as
-   NumPy's linked BLAS; there is no operator fusion, no kernel selection.
-   Real numbers are in `benchmarks/results/`.
-5. **What consumes excessive memory?** The dynamic autodiff tape retains
-   every intermediate tensor referenced by a `requires_grad=True` graph
-   until `backward()` runs or the graph is dropped; there is no
-   checkpointing/recomputation yet, so training loops with `no_grad()` used
-   incorrectly will grow memory. `timet.memory.stats()` at least makes this
-   visible now.
-6. **What architectural debt exists?** IR is computed but unused by
-   execution (DD-3); single backend so the `Backend` abstraction is
-   unverified by a second real implementation; no shape typing means shape
-   errors surface at runtime, not compile time.
-7. **What assumptions may be wrong?** That a brace-delimited syntax (DD-2)
-   is the right long-term surface syntax for "concise AI/ML code" is
-   unverified against real user programs; that method-call tensor ops
-   (`x.sum()`) plus free functions (`sum(x)`) both being supported is worth
-   the duplication is also unverified and could be simplified later.
-8. **What should be redesigned before continuing?** Before Milestone 6's
-   optimizer work begins in earnest, the interpreter should be switched to
-   execute the IR (not the AST) so there is only one source of execution
-   truth — currently listed as the Milestone 6 entry condition.
-9. **What should NOT be implemented yet?** GPU/ARM64 backends, package
-   manager, FFI/C ABI — all correctly deferred per the master prompt's own
-   sequencing (§14, §32, §20 all say "do not implement all of these
-   immediately" / plan-only for now).
-10. **What evidence supports current claims?** `pytest -q` output (attached
-    below in TESTING.md instructions to reproduce), `benchmarks/results/*`
-    raw JSON, and `examples/*.expected` byte-exact output comparisons — all
-    reproducible by re-running the commands in TESTING.md, not asserted from
-    memory.
+## Self-Criticism
+Milestone retrospectives (master prompt §39, all 10 questions) live in
+docs/RETROSPECTIVES.md — one dated entry per milestone band, kept as history.

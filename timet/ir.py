@@ -1,17 +1,26 @@
 """Time-T typed intermediate representation.
 
 Flat, three-address-code style IR, lowered from the typed AST. Inspectable
-via `time-t inspect --ir`, serializable to/from JSON, and deterministic given
-identical input. See docs/DESIGN_DECISIONS.md DD-3: this IR is *not* executed
-by the interpreter yet -- it exists so shape checking work in future
-milestones has a stable place to live, without gating the language/autodiff
-milestones on the optimizer being finished first.
+via `time-t inspect --ir`, serializable to/from JSON, deterministic given
+identical input, and -- since v0.2 -- directly executable by
+`timet/ir_exec.py` and optimized by `timet/optimize.py`.
+
+Control flow is represented with STRUCTURED markers (if_begin/else/if_end,
+while_begin/while_check/while_end, for_begin/for_end,
+nograd_begin/nograd_end), which the executor walks as a block tree. Mutable
+`var` bindings lower to named storage (var_def / store / load) so loop-carried
+values work; immutable `let` bindings stay in SSA-temp form.
+
+Documented limits (executor raises IrExecError, never silently mis-runs):
+lambdas, nested function declarations, and if-EXPRESSIONS are not lowered
+(the AST interpreter remains the semantic reference there); `&&`/`||` are
+eager in IR, not short-circuiting. See docs/DESIGN_DECISIONS.md DD-9.
 """
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field, asdict
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 import timet.ast_nodes as A
 
@@ -91,22 +100,32 @@ class TirProgram:
     def from_json_str(s: str) -> "TirProgram":
         return TirProgram.from_json(json.loads(s))
 
+    def function_table(self) -> Dict[str, TirFunction]:
+        return {f.name: f for f in self.functions}
+
     def render(self) -> str:
         return "\n\n".join(f.render() for f in self.functions)
+
+
+#: Top-level statements are lowered into a synthetic function of this name.
+MAIN_FN = "__main__"
 
 
 class _Lowerer:
     def __init__(self):
         self.counter = 0
         self.instrs: List[TirInstr] = []
+        self.vars: Set[str] = set()  # names that live in named storage (mutable)
 
     def fresh(self) -> str:
         name = f"%t{self.counter}"
         self.counter += 1
         return name
 
-    def emit(self, op: str, args: List[str], ty: str, attrs: Optional[dict] = None) -> str:
-        result = self.fresh()
+    def emit(self, op: str, args: List[str], ty: str, attrs: Optional[dict] = None,
+             result: Optional[str] = None) -> str:
+        if result is None:
+            result = self.fresh()
         self.instrs.append(TirInstr(op, args, result, ty, attrs or {}))
         return result
 
@@ -119,7 +138,12 @@ class _Lowerer:
     def lower_stmt(self, stmt: A.Stmt, env: Dict[str, str]) -> Optional[str]:
         if isinstance(stmt, A.LetStmt):
             val = self.lower_expr(stmt.value, env)
-            env[stmt.name] = val
+            if stmt.mutable:
+                self.vars.add(stmt.name)
+                env.pop(stmt.name, None)
+                self.instrs.append(TirInstr("var_def", [val], stmt.name, "Unit"))
+            else:
+                env[stmt.name] = val
             return None
         if isinstance(stmt, A.ExprStmt):
             return self.lower_expr(stmt.expr, env)
@@ -129,7 +153,8 @@ class _Lowerer:
             return None
         if isinstance(stmt, A.AssignStmt) and isinstance(stmt.target, A.Ident):
             val = self.lower_expr(stmt.value, env)
-            env[stmt.target.name] = val
+            self.vars.add(stmt.target.name)
+            env.pop(stmt.target.name, None)
             self.instrs.append(TirInstr("store", [val], stmt.target.name, "Unit"))
             return None
         if isinstance(stmt, A.IfStmt):
@@ -142,13 +167,33 @@ class _Lowerer:
             self.instrs.append(TirInstr("if_end", [], None, "Unit"))
             return None
         if isinstance(stmt, A.WhileStmt):
+            # The condition instructions live INSIDE the loop region so the
+            # executor re-evaluates them every iteration (a flat
+            # "evaluate-once" lowering would be an infinite loop).
+            self.instrs.append(TirInstr("while_begin", [], None, "Unit"))
             cond = self.lower_expr(stmt.cond, env)
-            self.instrs.append(TirInstr("while_begin", [cond], None, "Unit"))
+            self.instrs.append(TirInstr("while_check", [cond], None, "Unit"))
             self.lower_block(stmt.body, dict(env))
             self.instrs.append(TirInstr("while_end", [], None, "Unit"))
             return None
-        # Other statement kinds (for/no_grad/fn-decl nested) are lowered as
-        # opaque markers for now; full lowering is future work (Milestone 6).
+        if isinstance(stmt, A.ForStmt):
+            coll = self.lower_expr(stmt.iterable, env)
+            item = self.fresh()
+            self.instrs.append(TirInstr("for_begin", [coll], item,
+                                        "<item>", {"var": stmt.var_name}))
+            body_env = dict(env)
+            body_env[stmt.var_name] = item
+            self.lower_block(stmt.body, body_env)
+            self.instrs.append(TirInstr("for_end", [], None, "Unit"))
+            return None
+        if isinstance(stmt, A.NoGradStmt):
+            self.instrs.append(TirInstr("nograd_begin", [], None, "Unit"))
+            self.lower_block(stmt.body, dict(env))
+            self.instrs.append(TirInstr("nograd_end", [], None, "Unit"))
+            return None
+        # Nested function declarations are NOT lowered into IR (documented
+        # limit, DD-9): closures need captured environments the flat IR does
+        # not model yet.
         self.instrs.append(TirInstr("unsupported_stmt", [], None, "Unit",
                                      {"kind": type(stmt).__name__}))
         return None
@@ -160,12 +205,17 @@ class _Lowerer:
         if isinstance(expr, A.FloatLit):
             return self.emit("const_float", [str(expr.value)], ty)
         if isinstance(expr, A.BoolLit):
-            return self.emit("const_bool", [str(expr.value)], ty)
+            return self.emit("const_bool", ["true" if expr.value else "false"], ty)
         if isinstance(expr, A.StringLit):
             return self.emit("const_str", [json.dumps(expr.value)], ty)
         if isinstance(expr, A.Ident):
             if expr.name in env:
                 return env[expr.name]
+            if expr.name in self.vars:
+                return self.emit("load", [expr.name], ty)
+            # Unresolved: either a function/builtin name used as a value, or
+            # a name a caller frame will provide. Lower as a storage load;
+            # the executor resolves it (or raises a clear error).
             return self.emit("load", [expr.name], ty)
         if isinstance(expr, A.ListExpr):
             elems = [self.lower_expr(e, env) for e in expr.elements]
@@ -181,13 +231,27 @@ class _Lowerer:
                       ">": "gt", ">=": "ge", "&&": "and", "||": "or"}[expr.op]
             return self.emit(opname, [l, r], ty)
         if isinstance(expr, A.Call):
+            kw_names = list(expr.kwargs.keys())
             args = [self.lower_expr(a, env) for a in expr.args]
-            name = expr.callee.name if isinstance(expr.callee, A.Ident) else "<dyn>"
-            return self.emit(f"call:{name}", args, ty)
+            args += [self.lower_expr(expr.kwargs[k], env) for k in kw_names]
+            if isinstance(expr.callee, A.Ident):
+                name = expr.callee.name
+                target = env.get(name)
+                if target is None or target == name:
+                    # static call: resolved against program fns / builtins
+                    return self.emit(f"call:{name}", args, ty,
+                                     {"kwargs": kw_names})
+                return self.emit("call_dyn", [target] + args, ty,
+                                 {"kwargs": kw_names})
+            callee = self.lower_expr(expr.callee, env)
+            return self.emit("call_dyn", [callee] + args, ty, {"kwargs": kw_names})
         if isinstance(expr, A.MethodCall):
+            kw_names = list(expr.kwargs.keys())
             recv = self.lower_expr(expr.receiver, env)
             args = [self.lower_expr(a, env) for a in expr.args]
-            return self.emit(f"method:{expr.method}", [recv] + args, ty)
+            args += [self.lower_expr(expr.kwargs[k], env) for k in kw_names]
+            return self.emit(f"method:{expr.method}", [recv] + args, ty,
+                             {"kwargs": kw_names})
         if isinstance(expr, A.FieldAccess):
             recv = self.lower_expr(expr.receiver, env)
             return self.emit(f"field:{expr.field}", [recv], ty)
@@ -196,10 +260,10 @@ class _Lowerer:
             idx = self.lower_expr(expr.index, env)
             return self.emit("index", [recv, idx], ty)
         if isinstance(expr, A.IfExpr):
-            cond = self.lower_expr(expr.cond, env)
-            then_val = self.lower_block(expr.then_branch, dict(env))
-            else_val = self.lower_block(expr.else_branch, dict(env))
-            return self.emit("if_expr", [cond, then_val or "", else_val or ""], ty)
+            # If-EXPRESSIONS are deliberately not lowered (DD-9): both branch
+            # bodies would have to be emitted inline and eagerly, diverging
+            # from AST semantics. The executor raises a clear error here.
+            return self.emit("unsupported_expr", [], ty, {"kind": "IfExpr"})
         return self.emit("unsupported_expr", [], ty, {"kind": type(expr).__name__})
 
 
@@ -216,7 +280,17 @@ def lower_function(fn: A.FnDecl) -> TirFunction:
 
 def lower_program(program: A.Program) -> TirProgram:
     functions = []
+    main_stmts = []
     for stmt in program.statements:
         if isinstance(stmt, A.FnDecl):
             functions.append(lower_function(stmt))
+        else:
+            main_stmts.append(stmt)
+    if main_stmts:
+        # Top-level statements become a synthetic `__main__` function so the
+        # whole program is executable/inspectable as IR.
+        lowerer = _Lowerer()
+        env: Dict[str, str] = {}
+        lowerer.lower_block(A.Block(statements=main_stmts, line=0, col=0), env)
+        functions.append(TirFunction(MAIN_FN, [], [], "Unit", lowerer.instrs))
     return TirProgram(functions)

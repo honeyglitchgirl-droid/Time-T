@@ -135,3 +135,61 @@ def test_negative_and_sub():
 def test_repr_contains_values():
     t = tensor([1.0, 2.0])
     assert "1.0" in repr(t)
+
+
+# ---- new in v0.2: argmax / clip / log_softmax / one_hot ----
+
+def test_argmax_axis_none_and_axis():
+    a = Tensor(np.array([[1.0, 5.0, 2.0], [4.0, 0.5, 3.0]], dtype=np.float32))
+    assert int(a.argmax().data) == 1
+    cols = a.argmax(axis=1)
+    assert cols.dtype == "i64"
+    assert list(cols.data) == [1, 0]
+
+
+def test_clip_forward_values():
+    a_np = np.array([-2.0, -0.5, 0.0, 0.5, 2.0], dtype=np.float32)
+    a = Tensor(a_np)
+    assert_close(a.clip(-1.0, 1.0).data, np.clip(a_np, -1.0, 1.0))
+
+
+def test_log_softmax_matches_manual_logsumexp():
+    a_np = np.random.randn(4, 5).astype(np.float32)
+    a = Tensor(a_np)
+    result = a.log_softmax(axis=-1).data
+    m = a_np.max(axis=-1, keepdims=True)
+    expected = (a_np - m) - np.log(np.exp(a_np - m).sum(axis=-1, keepdims=True))
+    assert_close(result, expected)
+    # exp(log_softmax) rows are valid probability distributions
+    assert_close(np.exp(result).sum(axis=-1), np.ones(4))
+
+
+def test_log_softmax_numerically_stable_with_large_logits():
+    a = Tensor(np.array([[1000.0, 1001.0, 999.0]], dtype=np.float32))
+    out = a.log_softmax(axis=-1).data
+    assert np.isfinite(out).all()
+
+
+def test_one_hot_basic():
+    from timet.tensor import one_hot
+    oh = one_hot([0, 2, 1], 3)
+    assert oh.shape == (3, 3)
+    assert_close(oh.data, np.eye(3)[[0, 2, 1]])
+
+
+def test_one_hot_exact_class_boundaries():
+    from timet.tensor import one_hot
+    oh = one_hot([0, 4], 5)
+    assert_close(oh.data, np.eye(5)[[0, 4]])
+
+
+def test_one_hot_rejects_out_of_range_and_nonpositive_classes():
+    import pytest
+    from timet.tensor import one_hot
+    from timet.tensor import TensorError
+    with pytest.raises(TensorError):
+        one_hot([3], 3)
+    with pytest.raises(TensorError):
+        one_hot([-1], 3)
+    with pytest.raises(TensorError):
+        one_hot([0], 0)

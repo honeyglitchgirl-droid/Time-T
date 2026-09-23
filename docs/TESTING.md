@@ -25,18 +25,23 @@ bin/time-t bench                            # regenerate benchmark numbers
 | Type checker tests            | tests/test_typechecker.py         |
 | Interpreter / runtime tests   | tests/test_interpreter.py         |
 | IR tests                      | tests/test_ir.py                  |
+| IR executor tests (v0.2.0)    | tests/test_ir_exec.py             |
+| IR optimization tests (v0.2.0)| tests/test_optimize.py            |
+| Engine differential tests (v0.2.0) | tests/test_ir_exec_diff.py   |
 | Tensor tests (+ NumPy diff)   | tests/test_tensor.py              |
 | Autodiff tests (+ fin. diff)  | tests/test_autodiff.py            |
 | Backend tests                 | tests/test_backend.py             |
 | NN / training tests           | tests/test_nn.py                  |
+| Training-utils tests (v0.2.0) | tests/test_train.py               |
+| Checkpoint/serialization tests (v0.2.0) | tests/test_checkpoint.py |
 | CLI tests                     | tests/test_cli.py                 |
 | Example program tests         | tests/test_examples.py            |
 | Fuzz tests                    | tests/test_fuzz.py                |
 | Diagnostics/error msg tests   | tests/test_diagnostics.py         |
 
-There is currently no separate "serialization" test file beyond IR JSON
-round-trip (in test_ir.py) because no other serialization format exists yet
-(no checkpoints, no ONNX) — see ROADMAP.md for what's deferred.
+Serialization is covered by `tests/test_checkpoint.py` (checkpoint
+save/load/corruption/resume) plus the IR JSON round-trip in `test_ir.py`.
+ONNX does not exist; see ROADMAP.md.
 
 ## Differential testing (§29)
 
@@ -51,6 +56,14 @@ finite differences of the forward function, reporting:
 max abs error, max rel error, tolerance used, op name, input shape
 ```
 on any failure.
+
+`tests/test_ir_exec_diff.py` (v0.2.0) adds ENGINE-level differential testing:
+every example program and 70+ generated random programs are run through the
+AST interpreter, the IR executor unoptimized, and the IR executor with `-O1`,
+and all three stdouts must match byte-for-byte. This is the guarantee behind
+`time-t run --via-ir` and `inspect --ir --opt`: the IR shown to you is the
+IR that runs, and optimization provably does not change program output on
+the tested corpus.
 
 ## Fuzzing (§30)
 

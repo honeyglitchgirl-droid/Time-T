@@ -70,3 +70,25 @@ def test_version_flag():
     proc = run_cli("--version")
     assert proc.returncode == 0
     assert "time-t" in proc.stdout
+
+
+def test_run_via_ir_engine_reported_and_matches(tmp_path):
+    proc = run_cli("run", "examples/02_calculator.tt", "--via-ir", "--json")
+    payload = json.loads(proc.stdout)
+    assert payload["status"] == "ok"
+    assert payload["engine"] == "ir"
+    assert payload["stdout"] == ["7", "4", "42"]
+
+
+def test_run_via_ir_optimized_matches_unoptimized(tmp_path):
+    o0 = run_cli("run", "examples/05_linear_regression.tt", "--via-ir", "-O", "0", "--json")
+    o1 = run_cli("run", "examples/05_linear_regression.tt", "--via-ir", "-O", "1", "--json")
+    assert json.loads(o0.stdout)["stdout"] == json.loads(o1.stdout)["stdout"]
+
+
+def test_inspect_ir_opt_json_has_stats():
+    proc = run_cli("inspect", "examples/02_calculator.tt", "--ir", "--opt", "--json")
+    payload = json.loads(proc.stdout)
+    assert payload["status"] == "ok"
+    assert "opt_stats" in payload
+    assert payload["opt_stats"]["instrs_after"] <= payload["opt_stats"]["instrs_before"]

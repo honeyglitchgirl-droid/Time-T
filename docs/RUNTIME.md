@@ -16,6 +16,50 @@ execution:
 defining `Environment` object directly (Python's normal reference semantics
 give correct closure-over-mutable-variable behavior for `var` bindings).
 
+### Second engine: IR executor (v0.2.0)
+
+`timet/ir_exec.py` executes the typed IR directly
+(`time-t run <file> --via-ir [-O 0|1]`). It shares the program semantics of
+the AST engine (byte-identical output is enforced by the differential test
+suite) but is slower and intentionally supports a smaller subset (DD-9).
+Host-library access works identically: `nn` / `optim` / `train` are
+pre-bound values in the main frame (DD-10), reachable from any function
+through the frame chain.
+
+## Neural-network library (`timet/nn.py`, `timet/optim.py`)
+
+Modules: `Linear`, `ReLU`, `Sigmoid`, `Tanh`, `Softmax`, `Flatten`,
+`Dropout` (inverted, seeded → deterministic; honors `train()/eval()`),
+`Sequential`. Losses: `MSELoss`, `CrossEntropyLoss` (log_softmax + one-hot
+NLL), `BCELoss` (with `Tensor.clip` for stability), plus functional forms
+(`nn.mse_loss`, `nn.cross_entropy_loss`, `nn.binary_cross_entropy`).
+Optimizers: `SGD`, `Adam` (bias-corrected; moment state keyed by parameter
+identity). Gradients of every loss flow through the finite-difference-
+checked primitive backward rules — no hand-written gradient code exists in
+nn.py except via composition of verified rules.
+
+Usable from BOTH the Python API and Time-T source (`examples/07`):
+`let model = nn.Sequential(nn.Linear(2, 8), nn.Tanh(), nn.Linear(8, 2))`.
+
+## Training utilities (`timet/train.py`)
+
+`fit(model, loss_fn, optimizer, x, y, epochs, ...)` — FULL-BATCH training
+loop (no mini-batching yet; it says so rather than faking generality) with
+optional logging, per-epoch pluggable metrics, and `EarlyStopping`
+(patience + min_delta, explicit inspectable state). `accuracy(logits,
+targets)` — argmax-based classification accuracy used by the tests and
+example 07.
+
+## Serialization / checkpoints (`timet/checkpoint.py`)
+
+Implemented in v0.2.0 (DD-11): parameters save to a versioned,
+deterministic JSON file and load back with strict key/shape/format/version
+checks (`save`, `load`, `load_into`, `state_dict`). Resume semantics are
+proven by test: train-20 → save → restore-into-fresh-model → train-30
+produces parameters exactly equal to an uninterrupted 50-epoch run.
+Limits: float64-expanded JSON is for the small models of today; a binary
+format is future work.
+
 ## Memory (`timet/memory.py`)
 
 See `docs/ARCHITECTURE.md` §7. `Tensor.__init__`/`__del__` call
@@ -48,13 +92,6 @@ this backend, so "deterministic training" (master prompt §23) is
 automatically satisfied by the current single-backend implementation --
 this is a property of scope, not yet a deliberately engineered guarantee for
 a future multi-backend world.
-
-## Serialization / checkpoints
-
-Not implemented. The only serialization format that exists is the IR's own
-JSON form (`TirProgram.to_json`/`from_json`), used purely for inspection and
-tooling, not for saving/loading trained models. No model checkpoint format
-exists yet (`docs/ROADMAP.md` Milestone 8).
 
 ## Threading / concurrency
 

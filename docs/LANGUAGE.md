@@ -100,6 +100,7 @@ Method-call style tensor ops:
 ```
 x.sum() x.mean() x.reshape([3,1]) x.transpose() m.matmul(m)
 x.exp() x.log() x.sqrt() x.relu() x.sigmoid() x.tanh() x.softmax()
+x.log_softmax() x.clip(-1.0, 1.0) x.argmax() x.item() x.detach()
 ```
 and free functions mirroring them: `sum(x) mean(x) matmul(a,b) relu(x) ...`
 
@@ -122,9 +123,30 @@ no_grad {
 ## 9. Built-in functions available today
 
 `print(x)`, `len(x)` (tensors/strings), `tensor(...)`, `zeros(...)`,
-`ones(...)`, `sum/mean/max/min/exp/log/sqrt/relu/sigmoid/tanh/softmax/matmul`,
+`ones(...)`, `sum/mean/max/min/exp/log/sqrt/relu/sigmoid/tanh/softmax/
+log_softmax/argmax/one_hot/matmul`,
 `assert(cond, msg)` — raises a runtime `AssertionError`-style diagnostic if
 `cond` is false.
+
+## 9a. Pre-bound library modules (v0.2.0, DD-10)
+
+Three names are bound in every program's global scope (before any user
+code runs), in BOTH execution engines:
+
+- `nn` — layers/losses: `nn.Sequential`, `nn.Linear`, `nn.ReLU`,
+  `nn.Sigmoid`, `nn.Tanh`, `nn.Softmax`, `nn.Flatten`, `nn.Dropout`;
+  `nn.mse_loss`, `nn.cross_entropy_loss`, `nn.binary_cross_entropy`
+  (+ class forms `nn.MSELoss()` etc.)
+- `optim` — `optim.SGD(params, lr=...)`, `optim.Adam(params, lr=...)`
+- `train` — `train.accuracy(logits, targets)`
+
+Typing note (honest): these are typed `TUnknown` at the boundary — the type
+checker does not yet statically check `nn.*` member types; errors raise at
+runtime with a stage tag. This is a documented bridge until the real module
+system (Milestone 2 remainder) exists — it is NOT a module system.
+
+Worked example: `examples/07_xor_classifier.tt` (trains an MLP with Adam to
+100% XOR accuracy; identical output under AST, IR-O0, IR-O1 engines).
 
 ## 10. Explicitly NOT implemented yet (see ROADMAP.md)
 

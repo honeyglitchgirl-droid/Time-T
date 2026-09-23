@@ -70,10 +70,21 @@ def cmd_run(args) -> int:
 
         program = parse(src, args.file)
         check(program)
-        interp = Interpreter(stdout_write=collect)
-        interp.run(program)
+        if getattr(args, "via_ir", False):
+            from timet.ir import lower_program
+            from timet.ir_exec import run_program
+            tir = lower_program(program)
+            engine = "ir"
+            if args.opt_level >= 1:
+                from timet.optimize import optimize_program
+                tir, _ = optimize_program(tir, level=args.opt_level)
+            run_program(tir, stdout_write=collect)
+        else:
+            engine = "ast"
+            interp = Interpreter(stdout_write=collect)
+            interp.run(program)
         if args.json:
-            print(json.dumps({"status": "ok", "stdout": outputs}))
+            print(json.dumps({"status": "ok", "engine": engine, "stdout": outputs}))
         return 0
     except Diagnostic as e:
         _emit_error(e, args.json)
@@ -88,10 +99,18 @@ def cmd_inspect(args) -> int:
         payload = {"status": "ok", "file": args.file}
         if args.ir:
             tir = lower_program(program)
+            if getattr(args, "opt", False):
+                from timet.optimize import optimize_program
+                tir, stats = optimize_program(tir, level=args.opt_level)
+                payload["opt_stats"] = stats.to_json()
             if args.json:
                 payload["ir"] = tir.to_json()
             else:
                 print(tir.render())
+                if getattr(args, "opt", False):
+                    print(f"-- opt stats: {json.dumps(payload['opt_stats']['passes'], sort_keys=True)} "
+                          f"({payload['opt_stats']['instrs_before']} -> "
+                          f"{payload['opt_stats']['instrs_after']} instrs)")
         if args.mem:
             payload["memory"] = memory.stats().to_json()
             if not args.json:
@@ -197,12 +216,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("run", help="run a .tt file")
     sp.add_argument("file")
+    sp.add_argument("--via-ir", dest="via_ir", action="store_true",
+                    help="execute via the IR executor instead of the AST interpreter")
+    sp.add_argument("-O", "--opt-level", dest="opt_level", type=int, default=1,
+                    choices=[0, 1], help="IR optimization level (with --via-ir)")
     add_json_flag(sp)
     sp.set_defaults(func=cmd_run)
 
     sp = sub.add_parser("inspect", help="inspect IR / memory / backend info for a .tt file")
     sp.add_argument("file")
     sp.add_argument("--ir", action="store_true")
+    sp.add_argument("--opt", action="store_true",
+                    help="with --ir: show/emit the OPTIMIZED IR plus pass statistics")
+    sp.add_argument("-O", "--opt-level", dest="opt_level", type=int, default=1,
+                    choices=[0, 1])
     sp.add_argument("--mem", action="store_true")
     sp.add_argument("--backend", action="store_true")
     add_json_flag(sp)
