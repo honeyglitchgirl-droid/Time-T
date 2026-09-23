@@ -98,3 +98,20 @@ def test_undefined_function_call():
     with pytest.raises(TypeError_) as exc:
         check_src("let x = totally_undefined(1)")
     assert exc.value.code == "E0205"
+
+
+
+def test_break_continue_outside_loop_is_a_compile_error():
+    from timet.typechecker import TypeError_
+    import pytest
+    with pytest.raises(TypeError_) as e:
+        check(parse("fn main() { break }"))
+    assert "E0215" in str(e.value)
+    with pytest.raises(TypeError_) as e2:
+        check(parse("continue"))
+    assert "E0215" in str(e2.value)
+
+
+def test_break_continue_inside_loop_ok():
+    check(parse("fn main() {\n    while true {\n        break\n    }\n    "
+                "for t in [tensor([1.0])] {\n        continue\n    }\n}"))

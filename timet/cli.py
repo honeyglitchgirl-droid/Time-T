@@ -23,7 +23,7 @@ from timet.interpreter import Interpreter, RuntimeErr
 from timet.backend import get_default_backend
 from timet import memory
 
-NOT_IMPLEMENTED = {"build", "profile", "export", "package", "doctor"}
+NOT_IMPLEMENTED = {"profile", "export", "package", "doctor"}
 
 
 def _fresh_loader():
@@ -76,7 +76,19 @@ def cmd_run(args) -> int:
         program = parse(src, args.file)
         loader = _fresh_loader()
         check(program, filename=args.file, loader=loader)
-        if getattr(args, "via_ir", False):
+        if getattr(args, "native", False):
+            from timet.native import run_native
+            proc = run_native(program)
+            for line in proc.stdout.splitlines():
+                collect(line)
+            if proc.returncode != 0:
+                _emit_error(Diagnostic(
+                    code="E0901", message="native executable returned "
+                                          f"exit code {proc.returncode}",
+                    note=proc.stderr.strip()[:2000], stage="native"), args.json)
+                return 1
+            engine = "native"
+        elif getattr(args, "via_ir", False):
             from timet.ir import lower_program
             from timet.ir_exec import run_program
             tir = lower_program(program, loader=loader, importer_path=args.file)
@@ -168,6 +180,32 @@ def cmd_bench(args) -> int:
     return 0
 
 
+def cmd_build(args) -> int:
+    """Native compilation via the C-emitter slice (Milestone 9, DD-15).
+    On subset violations, fails with an honest, machine-readable diagnostic
+    -- never silently falls back to the interpreter."""
+    from timet.native import build as native_build, NativeError
+    try:
+        src = _read(args.file)
+        loader = _fresh_loader()
+        program = check(parse(src, args.file), filename=args.file, loader=loader)
+        out = args.output or str(Path(args.file).with_suffix("")) + ".native"
+        res = native_build(program, out, cc=getattr(args, "cc", None))
+        payload = {"status": "ok", "output": res.output,
+                   "compiler": res.compiler,
+                   "compile_seconds": res.compile_seconds,
+                   "c_bytes": len(res.c_source)}
+        if args.json:
+            print(json.dumps(payload))
+        else:
+            print(f"built {out} with {res.compiler} in "
+                  f"{res.compile_seconds:.2f}s ({len(res.c_source)} bytes of C)")
+        return 0
+    except Diagnostic as e:
+        _emit_error(e, args.json)
+        return 1
+
+
 def cmd_repl(args) -> int:
     from timet.parser import Parser
     from timet.lexer import tokenize
@@ -229,6 +267,9 @@ def build_parser() -> argparse.ArgumentParser:
                     help="execute via the IR executor instead of the AST interpreter")
     sp.add_argument("-O", "--opt-level", dest="opt_level", type=int, default=1,
                     choices=[0, 1], help="IR optimization level (with --via-ir)")
+    sp.add_argument("--native", dest="native", action="store_true",
+                    help="compile to native code (C emitter v1 subset) and run; "
+                         "fails with a diagnostic on unsupported constructs")
     add_json_flag(sp)
     sp.set_defaults(func=cmd_run)
 
@@ -256,6 +297,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("repl", help="interactive REPL")
     add_json_flag(sp)
     sp.set_defaults(func=cmd_repl)
+
+    sp = sub.add_parser("build", help="native-compile a .tt file to an executable (v1 C-emitter subset, DD-15)")
+    sp.add_argument("file")
+    sp.add_argument("-o", "--output", default=None)
+    sp.add_argument("--cc", default=None, help="C compiler to use (default: first of gcc/cc/clang on PATH)")
+    add_json_flag(sp)
+    sp.set_defaults(func=cmd_build)
 
     for name in NOT_IMPLEMENTED:
         sp = sub.add_parser(name, help=f"(not implemented yet) {name}")

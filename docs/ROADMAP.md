@@ -17,7 +17,9 @@ reproduce every claim below.
 
 ## Milestone 2 — Types + functions + modules ✅ DONE (v0.3.0)
 - DONE: primitive types, function declarations, closures, type checking,
-  scoping, immutable/mutable bindings (`let`/`var`), diagnostics with
+  scoping, immutable/mutable bindings (`let`/`var`), `break`/`continue`
+  with static out-of-loop rejection (E0215, v0.4.0), true-division typing
+  (`/` always Float, soundness fix DD-16), diagnostics with
   location + expected/actual (`timet/diagnostics.py`); file modules
   (`import a.b.c [as m]`, typed exports, import-once, fresh scope —
   DD-13, `timet/modules.py`).
@@ -107,10 +109,21 @@ reproduce every claim below.
   precision, training-run log format, binary checkpoint format (needed for
   larger models).
 
-## Milestone 9 — Native optimization 🔲 NOT STARTED
-- No native codegen. Depends on Milestone 6 optimization passes existing
-  first, then a lowering target (LLVM, C, or direct machine code) chosen
-  and documented as a new Design Decision before implementation begins.
+## Milestone 9 — Native optimization 🟡 PARTIAL (started v0.4.0)
+- DONE (v0.4.0): a working native path — `timet/native.py` C-emitter over
+  a strict, byte-verified subset (DD-15; scalars/control flow/typed
+  functions/recursion/print of Int-Bool-String), CLI `build` (upgraded
+  from stub to real) and `run --native`; gcc compile ~50 ms for small
+  programs; `benchmarks/run_benchmarks.py` records the measured
+  ~3000x scalar-loop interpreter-overhead removal (caveat-recorded; tensor
+  workloads are NumPy-bound either way and see no such ratio).
+- NOT DONE (tracked): tensors in the native backend, Float printing
+  (shortest-repr formatting parity), `for` loops natively, f-strings and
+  string concat natively, modules natively, whole-program optimization
+  (inlining, const-prop across functions — needs CFG/dataflow, DD-12),
+  loop optimizations, backend kernel selection, multi-objective
+  optimization, LLVM-vs-C re-targeting decision (deliberately deferred,
+  DD-15 explains why C-first keeps that door open).
 
 ## Milestone 10 — ARM64 / mobile 🔲 NOT STARTED
 - No ARM64-specific work, no quantization, no mobile runtime. No performance

@@ -205,3 +205,70 @@ the optimizer work began only after the IR itself became executable.)
     `consts.tt`) runs through AST/IR-O0/IR-O1 byte-identically and through
     the CLI (`examples` differential suite auto-picks it up); CLI
     diagnostics for E0213 verified in `tests/test_cli.py` (now 14).
+
+
+---
+
+# Entry 4 — v0.4.0, opening Milestone 9 (native C-emitter) and reconciling language semantics
+
+1. **What works?** `time-t build` compiles a byte-verified subset of
+   Time-T to native executables through a C emitter + system cc; every
+   out-of-subset construct fails loudly with a span-tagged diagnostic.
+   `break`/`continue` now exist in all four execution paths (AST, IR-O0,
+   IR-O1, native). The `Int/Int -> Int` soundness bug is fixed; both
+   divergent subsystems (checker's division typing and optimizer's
+   div-by-one fold) have regression tests.
+2. **What does not work / doesn't exist?** Native: tensors, Float
+   printing, for loops, f-strings, string concat, modules, closures as
+   values. Milestone 9's real substance — whole-program optimization,
+   inlining, LICM/fusion, kernel selection, multi-objective optimization —
+   is untouched (needs CFG-form IR per DD-9/DD-12). ARM64/mobile still
+   zero.
+3. **What is untested?** Native Int overflow behavior AT the 2^63 boundary
+   (documented divergence, no test pins the exact wrap value — the
+   contract is "stay within int64", asserted by differential tests,
+   but a wrap-at-boundary case isn't one of them); `build` against clang
+   (only gcc exercised — harness searches gcc first); emitted-C warnings
+   (-Wall output is not checked, only compilation success).
+4. **What is slow?** Nothing new in the INTERPRETER; the native path adds
+   a ~50 ms gcc invocation per build (baseline for tiny programs; it is
+   the honest price of host-compiler optimization). Benchmarks refreshed:
+   bench_1790177898.json is the current truth.
+5. **What consumes excessive memory?** Unchanged (tape retention). The
+   native path spawns gcc via tempfiles and cleans them; nothing retained.
+6. **What architectural debt exists?** The native emitter re-walks the
+   typed AST directly rather than consuming the IR — a second codegen
+   path that will want re-targeting to the IR once CFG form exists
+   (recorded, not hidden; the AST path was chosen deliberately for the
+   vertical slice per "minimal first"); `timet/native.py` duplicates a
+   small amount of semantic knowledge (floor-mod helper, division rule)
+   in C text — acceptable while the subset is scalars-only; param types
+   are NOT in the IR, which limits the optimizer (conservative div-by-one
+   fold) and the native path alike.
+7. **What assumptions may be wrong?** That byte-equality for Float
+   printing is achievable cheaply later (shortest-repr in C is a real
+   port of Grisu/Ryu — it may force ND wrapper or C++ <charconv>); that
+   int64-as-Int is acceptable for an ML language (PyTorch uses int64 by
+   default — probably fine, but arbitrary-precision interpreter Int vs
+   int64 native IS a stated contract wrinkle users could trip on); that
+   gcc-on-PATH is a reasonable build prerequisite (doctor/build already
+   report it cleanly when absent — tests skip).
+8. **What should be redesigned before continuing?** Milestone 9's
+   REMAINDER should NOT grow the AST-directed emitter indefinitely: the
+   next native increment should first land param types in the IR (cheap,
+   unblocks BOTH optimizer folding and emitter type-lookup), then decide
+   whether native lowers from IR instead of AST for v2. That decision and
+   the CFG-form decision are the same door.
+9. **What should NOT be implemented yet?** LLVM (per DD-15 — premature);
+   tensor codegen natively (needs a kernel/BLAS decision first, then a
+   TENSOR.md-level design note); multi-objective optimization (needs the
+   baseline single-objective passes and REAL benchmarks to trade);
+   packaging the native binary as an installer (M12 concerns).
+10. **What evidence supports current claims?** `pytest -q` = 340 passing:
+    tests/test_native.py (16: byte-equality across the subset battery,
+    examples 01/02 compiled, deterministic C emission, 9 rejection
+    tests naming each construct, temp-compile determinism);
+    benchmarks/results/bench_1790177898.json (measured 3247x scalar-loop
+    ratio with the caveat in the row itself); the break/continue and
+    division-typing regressions in tests/test_optimize.py +
+    tests/test_typechecker.py + differential suite (now 60 cases).

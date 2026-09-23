@@ -197,6 +197,12 @@ class _Lowerer:
                 self.instrs.append(
                     TirInstr("store", [val], self.storage_prefix + name, "Unit"))
             return None
+        if isinstance(stmt, A.BreakStmt):
+            self.instrs.append(TirInstr("break", [], None, "Unit"))
+            return None
+        if isinstance(stmt, A.ContinueStmt):
+            self.instrs.append(TirInstr("continue", [], None, "Unit"))
+            return None
         if isinstance(stmt, A.IfStmt):
             cond = self.lower_expr(stmt.cond, env)
             self.instrs.append(TirInstr("if_begin", [cond], None, "Unit"))

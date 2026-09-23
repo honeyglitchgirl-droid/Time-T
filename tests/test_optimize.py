@@ -210,3 +210,25 @@ def test_optimized_examples_have_no_dangling_temp_uses():
                     if arg.startswith("%"):
                         assert arg in defined, \
                             f"{path.name}:{fn.name}: dangling {arg} in {ins}"
+
+
+def test_algebraic_float_div_one_FOLDS_but_int_div_one_does_not():
+    """x/1 for Float x is a genuine identity; for Int x it is NOT, because
+    / is true division (Int -> Float) and a copy would lose the type change.
+    (Conservative scope: the optimizer only folds when the operand's type is
+    KNOWN from within the function; parameter types are not in the IR yet --
+    see DD-12.)
+    """
+    tir, _ = opt("fn f() -> Float { let a = 2.5 return a / 1.0 }")
+    assert "div" not in ops(tir)
+    tir2, _ = opt("fn g(x: Int) -> Float { return x / 1 }")
+    assert "div" in ops(tir2)
+
+
+def test_int_division_is_typed_float():
+    """Soundness regression: 7 / 2 must be typed Float (the interpreter does
+    true division); previously typed Int, which broke native codegen."""
+    from timet.types import TFloat
+    prog = check(parse("fn main() { let q = 7 / 2 }"))
+    stmt = prog.statements[0].body.statements[0]
+    assert isinstance(stmt.value.ty, TFloat)

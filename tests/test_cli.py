@@ -59,7 +59,7 @@ def test_inspect_backend_json():
 
 
 def test_not_implemented_commands_report_honestly():
-    for cmd in ("build", "profile", "export", "package", "doctor"):
+    for cmd in ("profile", "export", "package", "doctor"):
         proc = run_cli(cmd, "--json")
         payload = json.loads(proc.stdout)
         assert payload["status"] == "not_implemented"

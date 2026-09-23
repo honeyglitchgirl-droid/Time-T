@@ -169,6 +169,16 @@ class ForStmt(Stmt):
 
 
 @dataclass
+class BreakStmt(Stmt):
+    pass
+
+
+@dataclass
+class ContinueStmt(Stmt):
+    pass
+
+
+@dataclass
 class IfStmt(Stmt):
     cond: Expr
     then_branch: "Block"

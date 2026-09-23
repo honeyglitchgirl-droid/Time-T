@@ -41,6 +41,7 @@ class TokenKind(Enum):
 
 KEYWORDS = {
     "let", "var", "fn", "return", "if", "else", "while", "true", "false",
+    "break", "continue",
     "no_grad", "struct", "enum", "match", "import", "for", "in",
 }
 

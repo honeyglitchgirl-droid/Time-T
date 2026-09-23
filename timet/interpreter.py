@@ -25,6 +25,14 @@ class RuntimeErr(Diagnostic):
     pass
 
 
+class _Break(Exception):
+    pass
+
+
+class _Continue(Exception):
+    pass
+
+
 class ReturnSignal(Exception):
     def __init__(self, value):
         self.value = value
@@ -136,16 +144,30 @@ class Interpreter:
             elif stmt.else_branch is not None:
                 self.exec_block(stmt.else_branch, env.child())
             return None
+        if isinstance(stmt, A.BreakStmt):
+            raise _Break()
+        if isinstance(stmt, A.ContinueStmt):
+            raise _Continue()
         if isinstance(stmt, A.WhileStmt):
             while self.eval(stmt.cond, env):
-                self.exec_block(stmt.body, env.child())
+                try:
+                    self.exec_block(stmt.body, env.child())
+                except _Break:
+                    break
+                except _Continue:
+                    pass
             return None
         if isinstance(stmt, A.ForStmt):
             iterable = self.eval(stmt.iterable, env)
             for item in iterable:
                 inner = env.child()
                 inner.define(stmt.var_name, item)
-                self.exec_block(stmt.body, inner)
+                try:
+                    self.exec_block(stmt.body, inner)
+                except _Break:
+                    break
+                except _Continue:
+                    pass
             return None
         if isinstance(stmt, A.NoGradStmt):
             with no_grad():

@@ -105,6 +105,54 @@ def bench_mlp_train_step():
             "note": "full-batch fwd+bwd+step, 2-16-2 MLP"}
 
 
+
+
+def bench_native_loop_sum():
+    """AST interpreter vs the native C emitter (DD-15) on the same scalar
+    loop. Only recorded when a C compiler exists on the machine; the ratio
+    measures interpreter overhead on PURE SCALAR arithmetic -- it is not a
+    claim about tensor workloads (those are NumPy-bound either way)."""
+    import shutil
+    if not shutil.which("gcc") and not shutil.which("cc") \
+            and not shutil.which("clang"):
+        return {"name": "native_loop_sum_1e6", "skipped": True,
+                "note": "no C compiler on PATH"}
+    import subprocess
+    import tempfile as _tf
+    from timet.parser import parse
+    from timet.typechecker import check
+    from timet.native import build as _nbuild
+    from timet.interpreter import run_source as _rs
+    src = """
+var i = 0
+var acc = 0
+while i < 1000000 {
+    acc = acc + i * 2 - i % 7
+    i = i + 1
+}
+print(acc)
+"""
+    out = []
+    t_ast = _time_it(lambda: _rs(src, filename="<bench>",
+                                 stdout_write=out.append), repeats=3)
+    prog = check(parse(src, "<bench>"))
+    with _tf.TemporaryDirectory() as td:
+        exe = td + "/a.out"
+        res = _nbuild(prog, exe)
+        proc = subprocess.run([exe], capture_output=True, text=True)
+        assert proc.stdout.strip() == out[0] \
+            and not proc.stderr, "native output diverged from the interpreter!"
+        t_native = _time_it(
+            lambda: subprocess.run([exe], capture_output=True, text=True),
+            repeats=5)
+    return {"name": "native_loop_sum_1e6", "seconds": t_native,
+            "note": f"native binary via gcc (AST interp on same loop: "
+                    f"{t_ast:.3f}s; ratio {t_ast / max(t_native, 1e-9):.0f}x; "
+                    f"scalar-loop workload, NOT a tensor-perf claim)",
+            "ast_interpreter_seconds": t_ast,
+            "speedup": t_ast / max(t_native, 1e-9)}
+
+
 def run_all() -> dict:
     benches = [
         bench_scalar_add(),
@@ -114,6 +162,7 @@ def run_all() -> dict:
         bench_reduction(),
         bench_autodiff_backward(),
         bench_mlp_train_step(),
+        bench_native_loop_sum(),
     ]
     result = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -137,7 +186,10 @@ def main():
     out_path.write_text(json.dumps(result, indent=2))
     print(f"wrote {out_path}")
     for b in result["benchmarks"]:
-        print(f"{b['name']:30s} {b['seconds']*1000:10.3f} ms   {b.get('note','')}")
+        if b.get("skipped"):
+            print(f"{b['name']:30s}  SKIPPED: {b.get('note','')}")
+        else:
+            print(f"{b['name']:30s} {b['seconds']*1000:10.3f} ms   {b.get('note','')}")
 
 
 if __name__ == "__main__":

@@ -24,6 +24,7 @@ from typing import Dict, List, Optional, Tuple
 from timet.ir import TirFunction, TirInstr, TirProgram
 
 _MARKERS = {
+    "break", "continue",
     "if_begin", "else", "if_end", "while_begin", "while_check", "while_end",
     "for_begin", "for_end", "nograd_begin", "nograd_end", "return",
 }
@@ -148,6 +149,10 @@ def _is_num(v, target) -> bool:
 def algebraic(fn: TirFunction, stats: OptStats) -> None:
     consts = {ins.result: _parse_const(ins) for ins in fn.instrs
               if ins.op.startswith("const_")}
+    # temp -> declared type, for type-preservation guards (the copy we emit
+    # must have the SAME type as the op it replaces -- e.g. Int x / 1 must
+    # NOT fold to a copy of the Int, because / yields Float)
+    temp_ty = {ins.result: ins.ty for ins in fn.instrs if ins.result}
     for ins in fn.instrs:
         if ins.op not in ("add", "sub", "mul", "div") or len(ins.args) != 2:
             continue
@@ -167,7 +172,8 @@ def algebraic(fn: TirFunction, stats: OptStats) -> None:
                 repl = a
             elif _is_num(ca, 1):
                 repl = b
-        elif ins.op == "div" and numeric_float and _is_num(cb, 1):
+        elif ins.op == "div" and numeric_float and _is_num(cb, 1) \
+                and temp_ty.get(a) == "Float":
             repl = a
         if repl is not None:
             ins.op, ins.args = "copy", [repl]

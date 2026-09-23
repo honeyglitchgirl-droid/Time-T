@@ -4,6 +4,43 @@ All notable changes to Time-T are recorded here. Format loosely follows
 Keep a Changelog; versioning follows master prompt §37 (targets, not
 promises).
 
+## [0.4.0] — 2026-09-23 (Milestone 9 begins: native C-emitter; language reconciliations)
+
+**Native codegen lands (DD-15, Milestone 9 v1 slice).** `time-t build
+file.tt [-o out]` compiles a strict, byte-verified subset of Time-T to a
+native executable via deterministic C11 + the system C compiler
+(gcc/cc/clang); `time-t run file.tt --native` builds-and-runs. The subset:
+Int/Float/Bool arithmetic + comparisons, Bool-only `&&`/`||`, String
+literals (assign + print), let/var, if/else-if/else, while with
+break/continue, typed functions + recursion, print of Int/Bool/String.
+EVERY out-of-subset construct is a `native:`-prefixed diagnostic naming
+the construct (Float printing, tensors, for loops, lambdas, f-strings,
+imports, string concat...). No silent fallbacks. Semantics pinned to the
+interpreter: `/` is true division; `%` is Python floor-modulo (-7 % 3 == 2
+natively too). `build` graduated from "not implemented" stub to a real
+command; `profile`/`export`/`package`/`doctor` remain honest stubs.
+
+**Measured perf (documented with caveats, DD-15):** ~3000x on a 1M-iter
+scalar while-loop (7.52 s interpreter vs 2.3 ms native binary) — this is
+interpreter-overhead removal on scalar arithmetic, recorded in
+benchmarks/results; tensors are NumPy-bound in both engines and see no
+such ratio. The only claim is the one measured.
+
+**Language reconciliation (DD-16), found by native differential tests:**
+- `break`/`continue` now EXIST end-to-end (parser; E0215 static
+  out-of-loop error; interpreter; IR lowerer + executor; optimizer treats
+  them as segment boundaries; native C break/continue). They were absent
+  everywhere before — never documented as working.
+- Soundness fix: the type checker claimed `Int / Int -> Int` while the
+  interpreter computed true division; `/` is now typed Float
+  unconditionally. Optimizer gained the matching guard (`x/1` folds only
+  for statically-Float operands). Runtime behavior of interpreted programs
+  unchanged.
+
+Suite: **340 tests** (was 318). New: test_native.py (16 incl. the
+rejection battery + determinism), break/continue coverage in differential,
+E0215 typechecker tests, div-typing regressions, div-by-one-fold guard.
+
 ## [0.3.0] — 2026-09-23 (Milestone 2 complete: module system)
 
 **Modules land (DD-13).** `import a.b.c [as alias]` — resolves to

@@ -354,3 +354,75 @@ tensor-shuffle programs (each covered only by snippet/example tests).
 `f`-strings and `if`-expressions are
 deliberately not in the IR executor (executor raises clearly, tests assert
 the error is raised, not a wrong result).
+
+---
+
+## DD-15: Native codegen is a C-emitter over a strict, loudly-bounded subset
+
+**Decision (v0.4.0):** Milestone 9 begins with a C11 emitter
+(`timet/native.py`): typed AST → deterministic C source → the system C
+compiler (`gcc`/`cc`/`clang`). The v1 subset is intentionally SMALL and
+every out-of-subset construct is rejected with a `NativeError` naming the
+construct and its span — there is NO silent fallback and NO partial
+lowering: a program either compiles natively as a whole or builds fail.
+
+In the subset (all byte-verified against the AST interpreter in
+`tests/test_native.py`): Int (int64 — see divergence note), Float (double),
+Bool, String literals (assign + print only), `+ - * / %` and comparisons,
+`&&`/`||` on Bool operands, `!`, unary `-`, `let`/`var` with block scoping,
+`if`/`else if`/`else`, `while` (+`break`/`continue`), typed functions with
+recursion, `print` of Int/Bool/String.
+
+Deliberately NOT in v1 (each with its own error message, tests pin them):
+printing Float values (Python's shortest-repr float formatting has no
+trivial C equivalent; floats COMPUTE fully — only printing is excluded),
+tensors and all tensor builtins, all builtins except `print`, `for` loops,
+lambdas/closures-as-values, f-strings, imports/modules, string
+concatenation/comparison, mixed Int/Float `%`.
+
+Semantics pinned to the interpreter: `/` is ALWAYS true division (double),
+`%` is Python floor-modulo (emitted as a `tt_mod` helper — `-7 % 3 == 2`
+in both engines, unlike C's `-1`).
+
+**Known divergences (documented, tested at the boundary of the defined
+contract, not fixed):** native Int is int64 with two's-complement wrap —
+Time-T's Python Int is arbitrary precision; programs exceeding 2^63
+diverge. This is stated in LANGUAGE.md and DD-15, not hidden.
+
+**Why C emission instead of LLVM/direct machine code:** the master prompt
+(§12, Milestone 9) says to start with CPU-focused optimizations, not to
+pick a heavyweight IR first. A C emitter reuses the host compiler's 40
+years of register allocation/instruction selection at zero dependency
+cost, keeps the generated code READABLE (auditable: `time-t build`
+prints C-line counts; source lands next to the binary in debug scenarios),
+and leaves the LLVM decision genuinely open — the IR optimizer pipeline
+(DD-12/DD-14) is the actual substrate for future whole-program passes,
+and nothing in this decision blocks re-targeting them.
+
+**Performance honesty:** the measured ~3000x scalar-loop speedup
+(benchmarks/results) is interpreter-overhead removal on PURE SCALAR
+arithmetic; tensor workloads are NumPy-bound in both worlds and see no
+such ratio. No claim beyond that exists anywhere in the repo.
+
+---
+
+## DD-16: `break`/`continue` are statements; `/` is true division at the TYPE level
+
+**Decision (v0.4.0):** two language-semantics fixes, both found by the
+native backend's differential testing (the exact scenario DD-14 exists for):
+
+1. `break`/`continue` now exist — parser, type checker (out-of-loop use is
+   E0215), interpreter, IR lowerer + executor (control-flow exceptions
+   within loop regions), optimizer (they are segment boundaries), and the
+   native emitter (C `break`/`continue`). Before v0.4.0 they were not in
+   the language at all (docs never claimed them; the gap went unnoticed
+   until tests needed them).
+2. The type checker previously inferred `Int / Int -> Int` while the
+   interpreter computed true division (`7 / 2 == 3.5`) — a latent
+   soundness bug invisible to the interpreted engines but fatal to typed
+   codegen (a native `int64_t q = ...` would silently truncate). Now `/`
+   is typed `Float` unconditionally. The optimizer grew a matching guard:
+   `x / 1` folds to `x` only when x is static Float (an Int operand would
+   change the value's type); param-typed operands are conservatively not
+   folded because parameter types aren't representable in the current IR
+   (tracked as a DD-12/DD-15 follow-up).

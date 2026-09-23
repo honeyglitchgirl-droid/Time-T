@@ -92,6 +92,10 @@ class Parser:
                 return self._parse_return()
             if tok.text == "if":
                 return self._parse_if_stmt()
+            if tok.text == "break" or tok.text == "continue":
+                self._advance()
+                cls = A.BreakStmt if tok.text == "break" else A.ContinueStmt
+                return cls(line=tok.line, col=tok.col)
             if tok.text == "while":
                 return self._parse_while()
             if tok.text == "for":

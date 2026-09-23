@@ -73,6 +73,15 @@ while i < 10 {
     i = i + 1
 }
 ```
+`break` and `continue` (v0.4.0) work in `while` and `for` loops; using one
+outside a loop is a compile-time E0215:
+```
+while true {
+    i = i + 1
+    if i % 2 == 0 { continue }
+    if i > 9 { break }
+}
+```
 `if` is also an expression when both branches produce a value:
 ```
 let sign = if x >= 0 { 1 } else { -1 }
@@ -80,8 +89,14 @@ let sign = if x >= 0 { 1 } else { -1 }
 
 ## 6. Operators
 
-Arithmetic: `+ - * / %` (int/int → int; any float operand → float; `Tensor`
-operands → elementwise, with broadcasting)
+Arithmetic: `+ - * / %`.
+- IMPORTANT: `/` is TRUE division — `7 / 2 == 3.5` — and is typed `Float`
+  even for Int operands (fixed in v0.4.0: it was mis-typed Int before; no
+  program's RUNTIME behavior changed, only the type checker's soundness).
+- `%` is Python floor-modulo (`-7 % 3 == 2`) on Int; any Float operand
+  promotions behave like Python (`Float` results).
+- `+ - *` are Int-preserving on Int/Int; any Float operand → Float;
+  `Tensor` operands → elementwise with broadcasting.
 Comparison: `== != < <= > >=`
 Logical: `&& || !`
 Matrix multiply: `@` (Tensor only)
@@ -185,6 +200,29 @@ Rules (all enforced by tests in `tests/test_modules.py`):
 
 Not yet: `from x import y`, packages with `__init__`, wildcard imports,
 relative `./` imports, visibility modifiers, module-level doc metadata.
+
+## 9c. Native compilation (v0.4.0, DD-15) — strict subset
+
+`time-t build file.tt` compiles a program to a native executable via a C
+emitter + system C compiler; `time-t run file.tt --native` builds-and-runs.
+The v1 subset is deliberately small, and EVERY out-of-subset construct is
+rejected with a `native:`-prefixed diagnostic naming the construct (never
+a silent fallback, never a partially-compiled program).
+
+Supported (byte-verified against the interpreter in tests): Int/Float/Bool
+arithmetic and comparisons, `&&`/`||` on Bool operands, String literals
+(assignment + print), `let`/`var`, `if`/`else if`/`else`, `while` with
+`break`/`continue`, typed functions (annotations REQUIRED for params and
+return types) including direct recursion, `print` of Int/Bool/String.
+
+Not supported in v1: printing Float values (shortest-repr formatting
+parity is a separate work item), tensors and all builtins except `print`,
+`for` loops, lambdas as values, f-strings, string concatenation, modules.
+
+Semantic caveat (documented divergence): native Int is **int64** —
+Time-T interpreter Int is arbitrary precision (Python). Values beyond
+2^63 wrap mod 2^64 natively. Differential tests stay inside the
+well-defined contract.
 
 ## 10. Explicitly NOT implemented yet (see ROADMAP.md)
 

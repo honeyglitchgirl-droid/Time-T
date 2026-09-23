@@ -95,6 +95,7 @@ class TypeChecker:
                  importer_path: str = "<input>"):
         self.global_scope = Scope()
         self.errors: List[TypeError_] = []
+        self._loop_depth = 0
         self.loader = loader or ModuleLoader()
         self.importer_path = importer_path
 
@@ -188,10 +189,23 @@ class TypeChecker:
             self.check_block(stmt.then_branch, scope.child())
             if stmt.else_branch is not None:
                 self.check_block(stmt.else_branch, scope.child())
+        elif isinstance(stmt, (A.BreakStmt, A.ContinueStmt)):
+            if self._loop_depth == 0:
+                keyword = "Break" if isinstance(stmt, A.BreakStmt) else "Continue"
+                raise TypeError_(
+                    code="E0215",
+                    message=f"'{keyword.lower()}' used outside a loop",
+                    span=SourceSpan(stmt.line, stmt.col),
+                    note="break/continue must be inside a while/for body (or a "
+                         "function called from one)")
         elif isinstance(stmt, A.WhileStmt):
             cond_ty = self.infer(stmt.cond, scope)
             self._require(cond_ty, TBool(), stmt.cond, "while condition")
-            self.check_block(stmt.body, scope.child())
+            self._loop_depth += 1
+            try:
+                self.check_block(stmt.body, scope.child())
+            finally:
+                self._loop_depth -= 1
         elif isinstance(stmt, A.ForStmt):
             it_ty = self.infer(stmt.iterable, scope)
             # Iterating a Tensor yields (possibly 0-d) Tensor slices of the
@@ -199,7 +213,11 @@ class TypeChecker:
             el_ty = TTensor(it_ty.dtype) if isinstance(it_ty, TTensor) else TUnknown()
             inner = scope.child()
             inner.define(stmt.var_name, el_ty, mutable=False)
-            self.check_block(stmt.body, inner)
+            self._loop_depth += 1
+            try:
+                self.check_block(stmt.body, inner)
+            finally:
+                self._loop_depth -= 1
         elif isinstance(stmt, A.NoGradStmt):
             self.check_block(stmt.body, scope.child())
         elif isinstance(stmt, A.FnDecl):
@@ -406,6 +424,13 @@ class TypeChecker:
                     actual=f"{lt} {op} {rt}",
                     stage="typechecker",
                 )
+            if op == "/":
+                # The interpreter performs TRUE division (7 / 2 == 3.5) even
+                # on ints -- matching that at the type level is required for
+                # sound codegen; previously this branch returned TInt()
+                # for int/int, which was a genuine soundness bug found by
+                # the native backend's differential tests (v0.4.0).
+                return TFloat()
             if isinstance(lt, TFloat) or isinstance(rt, TFloat):
                 return TFloat()
             return TInt()

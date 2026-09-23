@@ -29,6 +29,14 @@ from timet.diagnostics import Diagnostic
 from timet.ir import TirFunction, TirInstr, TirProgram, MAIN_FN
 
 
+class _IrBreak(Exception):
+    pass
+
+
+class _IrContinue(Exception):
+    pass
+
+
 class IrExecError(Diagnostic):
     pass
 
@@ -338,7 +346,12 @@ class IRExecutor:
                         self._exec_instr(ins, frame)
                     if not frame.get(block.cond, "while_check"):
                         break
-                    self._exec_blocks(block.body, frame)
+                    try:
+                        self._exec_blocks(block.body, frame)
+                    except _IrBreak:
+                        break
+                    except _IrContinue:
+                        pass
             elif isinstance(block, _For):
                 coll = frame.get(block.coll, "for_begin")
                 try:
@@ -350,7 +363,12 @@ class IRExecutor:
                                       stage="ir-exec")
                 for item in iterator:
                     frame.set_temp(block.item, item)
-                    self._exec_blocks(block.body, frame)
+                    try:
+                        self._exec_blocks(block.body, frame)
+                    except _IrBreak:
+                        break
+                    except _IrContinue:
+                        pass
             elif isinstance(block, _NoGrad):
                 with no_grad():
                     self._exec_blocks(block.body, frame)
@@ -360,6 +378,10 @@ class IRExecutor:
     # -- straight-line instructions --
 
     def _exec_instr(self, ins: TirInstr, frame: Frame):
+        if ins.op == "break":
+            raise _IrBreak()
+        if ins.op == "continue":
+            raise _IrContinue()
         op = ins.op
 
         def val(arg: str):

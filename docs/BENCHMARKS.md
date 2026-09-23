@@ -42,3 +42,20 @@ No performance number appears in any Time-T documentation unless it was
 produced by running the script above on the machine described in that same
 result's `platform` field. Old result files are never edited by hand; a new
 run produces a new timestamped file.
+
+
+### Native emitter vs. AST interpreter (v0.4.0; DD-15)
+
+Measured on this machine (Linux x86_64, Python 3.11.2, gcc via
+`-O2`; source of truth: `benchmarks/results/bench_1790177898.json`,
+reproduce with `python3 benchmarks/run_benchmarks.py`):
+
+| benchmark | AST interpreter | native binary | speedup |
+|---|---|---|---|
+| `native_loop_sum_1e6` (1M-iteration scalar while-loop with `*` and floor-`%`) | 7.520 s | 2.316 ms | ~3247x |
+
+This ratio measures TREE-WALKING INTERPRETER OVERHEAD on pure scalar
+arithmetic — it is deliberately NOT reported as "Time-T is 3000x faster":
+tensor workloads dominate real programs here and are NumPy-bound in both
+worlds. The only scalar loops that see this magnitude are ones like the
+benchmark itself. Compile time for this program: ~0.05 s via gcc.

@@ -107,6 +107,18 @@ no_grad {
 }
 print(w)
 """,
+    # while loop with break/continue
+    """
+var i = 0
+var acc = 0
+while true {
+    i = i + 1
+    if i % 2 == 0 { continue }
+    if i > 9 { break }
+    acc = acc + i
+}
+print(acc)
+""",
     # int-only const-heavy code that O1 should mostly fold
     """
 let a = 2
