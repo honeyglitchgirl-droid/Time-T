@@ -93,9 +93,17 @@ reproduce every claim below.
   real module system exists) — `examples/07_xor_classifier.tt` trains a
   2-8-2 MLP+Adam+cross-entropy classifier to 100% XOR accuracy and runs
   byte-identically on all three execution engines.
-- NOT DONE: Embedding, Conv1D/Conv2D, normalization layers,
-  attention/transformer blocks, AdamW, weights/init schemes beyond
-  Kaiming-uniform, mixed precision.
+- EXPANDED (v0.5.0, DD-17): `Conv2D` layer + `conv2d` functional op
+  (NCHW, stride + zero-padding; im2col forward with hand-written col2im
+  backward, finite-difference checked from x/weight/bias in three
+  stride/padding configs); `Embedding` (scatter-add gradient, duplicate
+  indices accumulate -- pinned); `optim.AdamW` (decoupled weight decay,
+  bit-identical to Adam at wd=0). Usable from Time-T code:
+  `examples/09_conv_center_detector.tt` trains a Conv2D+Flatten+Linear
+  center-detector on all three engines (loss ~1e-7, byte identical).
+- NOT DONE: Conv1D/Conv3D, groups/dilation/transposed convs, normalization
+  layers (Batch/LayerNorm), attention/transformer blocks, weights/init
+  schemes beyond Kaiming-uniform, mixed precision, mini-batching.
 
 ## Milestone 8 — Training 🟡 PARTIAL (started v0.2.0)
 - DONE: `timet/train.py` — `accuracy()` metric, `History`,

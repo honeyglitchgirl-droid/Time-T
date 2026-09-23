@@ -4,6 +4,31 @@ All notable changes to Time-T are recorded here. Format loosely follows
 Keep a Changelog; versioning follows master prompt §37 (targets, not
 promises).
 
+## [0.5.0] — 2026-09-23 (Milestone 7 expansion: Conv2D, Embedding, AdamW)
+
+Layers grow real vision/NLP shapes (DD-17):
+- **Conv2D** + `conv2d` functional op: NCHW cross-correlation with stride
+  and zero-padding; im2col forward with a hand-written col2im backward as
+  a single tape op. Backward is finite-difference-checked from x, weight
+  AND bias in three stride/padding configurations (the layout mismatch
+  caught during development -- channel-major vs kernel-major col order --
+  is exactly what the forward test against a 6-loop reference exists for).
+- **Embedding**: index lookup with `np.add.at` scatter-add backward;
+  duplicate indices accumulate (explicit regression test). Out-of-range
+  indices are clear NNError diagnostics, never silent clamps.
+- **optim.AdamW**: decoupled weight decay; with wd=0 it is BIT-IDENTICAL
+  to Adam (pinned by test).
+- Reachable from Time-T code via the pre-bound `nn`/`optim` bridges;
+  `examples/09_conv_center_detector.tt` demonstrates end-to-end conv
+  training on all three engines with byte-identical output.
+
+Differential suites expanded: conv forward-vs-naive reference (4
+configs), conv backward finite differences (9 input-mode cd configs +
+shape/error tests), embedding forward/grad tests, AdamW regression tests.
+
+Suite: **367 tests** (was 340). No performance claims changed; the naive
+conv loop is deliberately not benchmark-asserted.
+
 ## [0.4.0] — 2026-09-23 (Milestone 9 begins: native C-emitter; language reconciliations)
 
 **Native codegen lands (DD-15, Milestone 9 v1 slice).** `time-t build

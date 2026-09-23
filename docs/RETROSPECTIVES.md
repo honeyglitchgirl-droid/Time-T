@@ -272,3 +272,66 @@ the optimizer work began only after the IR itself became executable.)
     ratio with the caveat in the row itself); the break/continue and
     division-typing regressions in tests/test_optimize.py +
     tests/test_typechecker.py + differential suite (now 60 cases).
+
+
+---
+
+# Entry 5 — v0.5.0, expanding Milestone 7 (Conv2D, Embedding, AdamW; DD-17)
+
+1. **What works?** Conv2D (stride + zero-padding over NCHW, engine-agnostic
+   since the tape handles it), Embedding with scatter-add gradients,
+   AdamW with bit-identical-to-Adam behavior when decay is off. All
+   trainable from Time-T code, byte-identical on AST/IR-O0/IR-O1
+   (example 09 demonstrates conv training end to end).
+2. **What does not work / doesn't exist?** All other conv shapes: 1-D/3-D
+   /grouped/dilated/transposed; conv1x1-as-matmul fast paths; padding
+   modes beyond zeros ("same"/"reflect"); normalization layers,
+   attention blocks, LR schedules, mini-batching, binary checkpoints,
+   Conv in the NATIVE backend (out of the DD-15 v1 subset, of course).
+3. **What is untested?** Conv on kernels larger than ~4x5 (im2col cols
+   matrix blowup is uncharacterized); Embedding with vocab > a few
+   hundred (np.add.at contention is real at scale but our scale is
+   small); AdamW float64-to-float32 cast behavior over very long
+   trainings (tests run 2000 steps max).
+4. **What is slow?** `_conv2d_backward`'s inner Python loops over all
+   spatial/kernel positions (O(KH*KW*C*H_out*W_out) Python iterations)
+   -- small tests take <0.5 s, a 28x28 MNIST image with 16 filters would
+   take minutes. This is recorded as a known slow point, no claim made.
+5. **What consumes excessive memory?** im2col duplicates the input by
+   KH*KW before the matmul (standard tradeoff, same as PyTorch's unfold
+   path), on top of the existing tape retention; both documented.
+6. **What architectural debt exists?** The conv packing layout knowledge
+   (channel-major cols ordering) is duplicated in `forward` and
+   `backward` -- a single `_col_layout()` helper would prevent the
+   mismatch this tranche spent a debug cycle on (recorded in DD-17);
+   `Tensor._make_result` is becoming the blessed custom-op entry point
+   WITHOUT a documented contract for third-party-ish ops -- it deserves a
+   section in AUTOGRAD.md once a second custom op exists (conv being the
+   first); the fd-test float64 pattern is tribal knowledge in two test
+   files, not yet a shared helper.
+7. **What assumptions may be wrong?** That einsum availability/behaviour
+   is stable across numpy versions the way the solver assumes (pinning
+   only in requirements is "numpy>=1.24"); that NCHW-only is the right
+   default (PyTorch's default, but MLPerf-style workloads often prefer
+   channels-last); that Linear-25 to 2 for example 09 generalizes -- it
+   does not, it is a 2-image toy and docs say so.
+8. **What should be redesigned before continuing?** Before Conv1D/3D
+   arrive, collapse the col layout into ONE helper with forward/backward
+   symmetry TEST (1-line change, large maintenance win). Before attention:
+   dropout/train-eval semantics are simple but the eval-mode dropout-off
+   path has no conv-adjacent test; add one when BatchNorm exists.
+9. **What should NOT be implemented yet?** Kernel-selection machinery
+   (im2col vs FFT vs Winograd -- premature at proof-of-training sizes,
+   exactly what Milestone 9's "do not implement all immediately" warns),
+   tensor cores / mixed precision, and NN layers in the native emitter
+   (needs a BLAS-story decision in the native backend first: how do
+   generated .c files call matmul? None of that exists).
+10. **What evidence supports current claims?** `pytest -q` = 367 passing:
+    tests/test_conv2d.py (13: forward-vs-6-loop-reference in 4 configs,
+    fd-checked gradients from all three inputs in 3 configs, determinism,
+    shape errors, and a conv-learns-center-detector integration test),
+    tests/test_embedding.py (7: row/shape gathers, out-of-range error,
+    fd weight grad, duplicate-index accumulation, learnability),
+    tests/test_adamw.py (5: bit-identical-at-wd0, directional-decay
+    effect, zero-gradient decay isolation, validation, XOR convergence),
+    plus example-09 differentially byte-identical across all engines.

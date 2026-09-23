@@ -74,3 +74,46 @@ class Adam:
     def zero_grad(self):
         for p in self.params:
             p.grad = None
+
+
+class AdamW(Adam):
+    """Adam with DECOUPLED weight decay (Loshchilov & Hutter, 2019).
+
+    Unlike L2-in-the-gradient (which interacts badly with Adam's adaptive
+    scaling), the penalty is applied directly to the parameter outside the
+    adaptive update:
+
+        p = p - lr * (m_hat / (sqrt(v_hat) + eps) + weight_decay * p)
+
+    With weight_decay=0 the update is exactly Adam's (bit-identical on
+    the same float64 path -- pinned by a test). Default weight_decay=0.01
+    matches common practice; lr and moment state semantics are Adam's.
+    """
+
+    def __init__(self, params: List[Tensor], lr: float = 0.001,
+                 betas=(0.9, 0.999), eps: float = 1e-8,
+                 weight_decay: float = 0.01):
+        super().__init__(params, lr=lr, betas=betas, eps=eps)
+        if weight_decay < 0:
+            raise ValueError(f"AdamW: weight_decay must be >= 0, got {weight_decay}")
+        self.weight_decay = weight_decay
+
+    def step(self):
+        for p in self.params:
+            if p.grad is None:
+                continue
+            k = id(p)
+            g = np.asarray(p.grad.data, dtype=np.float64)
+            if k not in self._m:
+                self._m[k] = np.zeros_like(g)
+                self._v[k] = np.zeros_like(g)
+                self._t[k] = 0
+            self._t[k] += 1
+            t = self._t[k]
+            self._m[k] = self.beta1 * self._m[k] + (1.0 - self.beta1) * g
+            self._v[k] = self.beta2 * self._v[k] + (1.0 - self.beta2) * g * g
+            m_hat = self._m[k] / (1.0 - self.beta1 ** t)
+            v_hat = self._v[k] / (1.0 - self.beta2 ** t)
+            update = self.lr * m_hat / (np.sqrt(v_hat) + self.eps) \
+                + self.lr * self.weight_decay * p.data.astype(np.float64)
+            p.data = (p.data.astype(np.float64) - update).astype(p.data.dtype)

@@ -3,4 +3,4 @@
 See docs/ARCHITECTURE.md for what is actually implemented vs. planned.
 """
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"

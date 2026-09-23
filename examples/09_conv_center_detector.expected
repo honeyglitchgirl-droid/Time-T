@@ -1,0 +1,2 @@
+Tensor(1.1920927533992653e-07, requires_grad=True, grad_fn=mean)
+Tensor([[-7.631247520446777, 7.831173896789551], [9.042924880981445, -8.988240242004395]], requires_grad=True, grad_fn=add)

@@ -426,3 +426,36 @@ native backend's differential testing (the exact scenario DD-14 exists for):
    change the value's type); param-typed operands are conservatively not
    folded because parameter types aren't representable in the current IR
    (tracked as a DD-12/DD-15 follow-up).
+
+---
+
+## DD-17: Conv/Embedding as custom tape ops; AdamW as decoupled decay
+
+**Decisions (v0.5.0):**
+1. `conv2d`/`Conv2D` is explicit im2col+matmul with a hand-written col2im
+   backward, integrated into the tape as ONE custom node (not decomposed
+   into fine-grained tracked ops). Rationale: gradients through a patch-
+   extraction composition would mean teaching `index`/slice ops full
+   gradient semantics first -- a much bigger surface for the same result.
+   Correctness is established by central finite differences from ALL
+   THREE inputs in three stride/padding configurations, plus a forward
+   check against a 6-nested-loop reference (tests/test_conv2d.py).
+   HONEST SCOPE: single conv op only (NCHW); no groups, dilation,
+   transposed conv, or 1-D/3-D variants; loops are clarity-first (no
+   speed claim; benchmark table untouched).
+2. `Embedding` backward is `np.add.at` scatter-add -- duplicate indices
+   ACCUMULATE (pinned by a dedicated test; a copy-overwrite backward is
+   the classic silent bug here).
+3. `AdamW` implements the Loshchilov & Hutter decoupled penalty
+   (`p -= lr*wd*p` OUTSIDE the adaptive term), not L2-in-grad. With
+   `weight_decay=0` it is BIT-IDENTICAL to `Adam` (pinned by test) -- same
+   float64 path modulo an exact `-0` term.
+
+**Process lesson recorded for future contributors (cost a debugging
+cycle):** finite-difference checks of float32 pipelines must not route
+the perturbed scalar through float32 tensors; summing ~250 float32
+outputs quantizes the scalar at ~1e-2, which swamps an h=1e-4 difference
+quotient and manufactures a fake "backward bug". tests/contest_conv2d.py
+documents the pattern: perturb in float64, evaluate the forward in
+float64 (`_conv2d_forward` directly), and keep the autodiff comparison
+at the repo's standard 1e-3 tolerance.
