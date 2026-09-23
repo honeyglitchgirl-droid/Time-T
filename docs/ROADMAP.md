@@ -119,9 +119,13 @@ reproduce every claim below.
   both pinned by tests) and `StepLR`/`ExponentialLR`/`CosineAnnealingLR`
   (recomputed-from-base exactness). Reachable from Time-T code (example
   10: mini-batch training with LR decay, byte-identical on all engines).
-- NOT DONE: validation splits / eval-mode plumbing inside fit*, mixed
-  precision, training-run log format, binary checkpoint format (needed
-  for larger models), distributed anything.
+- EXPANDED (v0.7.0, DD-19): validation splits -- `fit_loader(val_loader=...)`
+  with per-epoch `history.val_losses`, enforced eval-mode discipline for
+  the val pass (mode restored; probe-pinned), and `EarlyStopping` monitor
+  selection ('loss'/'val_loss'/metric, E0643 on monitor-without-data,
+  never silent fallback). Train/val phases share ONE `_run_epoch` loop.
+- NOT DONE: training-run log format, binary checkpoint format (needed
+  for larger models), optimizer+RNG-state resume, distributed anything.
 
 ## Milestone 9 — Native optimization 🟡 PARTIAL (started v0.4.0)
 - DONE (v0.4.0): a working native path — `timet/native.py` C-emitter over

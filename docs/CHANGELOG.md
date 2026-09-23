@@ -4,6 +4,26 @@ All notable changes to Time-T are recorded here. Format loosely follows
 Keep a Changelog; versioning follows master prompt §37 (targets, not
 promises).
 
+## [0.7.0] — 2026-09-23 (Milestone 8: validation splits + loop unification)
+
+- **fit_loader(val_loader=...)** (DD-19): per-epoch validation passes via
+  the SAME `_run_epoch` helper as training (optimizer=None => no
+  backward/step) -- the fit()/fit_loader() epoch-shell duplication
+  flagged in RETROSPECTIVES entry 6 is collapsed into one implementation.
+  Val losses land in `history.val_losses` as a distinct series.
+- **Eval-mode discipline**: the val pass runs under `model.eval()` and
+  the previous mode is RESTORED afterwards, pinned by a Probe module that
+  records `self.training` per forward (would catch both dropout-fired-
+  during-val and left-in-eval-for-next-train-epoch).
+- **EarlyStopping monitor=**: 'loss' (default, unchanged behavior),
+  'val_loss', or any metric name. monitor='val_loss' without val_loader
+  is E0643 (explicit, no silent fallback); unknown names are E0644.
+- A semantic regression test: with deliberately label-flipped validation
+  data, val loss RISES while train falls, and ES(monitor='val_loss')
+  stops early -- exactly the overfit signal the feature exists for.
+
+Suite: **391 tests** (was 385).
+
 ## [0.6.0] — 2026-09-23 (Milestone 8 expansion: mini-batching + LR schedules)
 
 - **DataLoader / TensorDataset** (DD-18): mini-batch iteration over tensor

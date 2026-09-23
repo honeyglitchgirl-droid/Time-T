@@ -490,3 +490,29 @@ at the repo's standard 1e-3 tolerance.
    2 epochs x 5 batches.
 7. Schedulers work on any optimizer with an `.lr` attribute (duck-typed on
    purpose: SGD/Adam/AdamW all qualify). CosineAnnealing clamps at t_max.
+
+
+---
+
+## DD-19: Validation splits inside fit_loader (Milestone 8)
+
+**Decisions (v0.7.0):**
+1. `fit(val_loader=...)` computes a val pass per epoch via the same
+   `_run_epoch` helper as training (optimizer=None -> no backward/step):
+   ONE loop implementation for both phases, which is the only way
+   "validation matches training" can stay a reviewable claim. The old
+   fit()/fit_loader() duplication flagged in Entry 6 is now collapsed.
+2. Eval-mode discipline is enforced for the val pass: `model.eval()`
+   before, `model.train(<previous mode>)` after -- pinned by a probe-Module
+   test. Silently leaving Dropout active through validation (or leaving
+   the model in eval for the next train epoch) are both real-world bugs
+   people ship; the test exists because this tranche nearly let the
+   second one through during writing.
+3. `EarlyStopping` gains NO new state; a `monitor=` name ("loss",
+   "val_loss", or a metric key) picks the series at the fit() call site.
+   Monitoring 'val_loss' without a val_loader is an explicit E0643 --
+   never silently falling back to train loss, which is the failure mode
+   nobody notices for weeks.
+4. Val loss means simple mean over val batches (same approximation as
+   train, DD-18 item); series live in `history.val_losses`, distinct from
+   train  `history.losses`, so curves can't be confused downstream.

@@ -399,3 +399,58 @@ the optimizer work began only after the IR itself became executable.)
     (6: exact lr sequences for all three schedules to 1e-12, per-epoch
     stepping pin, validation errors, annealed-rescues-divergence e2e),
     example 10 byte-identical across AST/IR-O0/IR-O1.
+
+
+---
+
+# Entry 7 — v0.7.0, Milestone 8 (validation splits, loop unification; DD-19)
+
+1. **What works?** val_loader plumbing with recorded val_losses, eval-mode
+   discipline (probe-pinned), monitorable early stopping incl. a semantic
+   overfit-detection test on deliberately flipped val labels, and one
+   `_run_epoch` shared by train/val.
+2. **What does not work / doesn't exist?** No train/eval distinction for
+   fit() (full-batch), no `best-epoch model restore` (ES just stops; the
+   caller keeps final params -- PyTorch Lightning-style restore-on-stop
+   is unimplemented and unclaimed), no per-sample val weighting, no
+   k-fold, no stratification.
+3. **What is untested?** val_loader with shuffle=True (allowed but
+   pointless; not pinned), monitor=<metric-name> early-stopping (code
+   path identified, negative-path tested, positive-path not), nested
+   Sequential-mode propagation through eval()/train() on models with
+   inner submodules beyond Dropout.
+4. **What is slow?** Val pass doubles epoch cost at full val size --
+   standard, documented; the Probe test froze the optimizer (lr=0) so
+   its cost accounting stays honest.
+5. **What consumes excessive memory?** Val forward builds a tape that is
+   discarded (no no_grad engine yet); at our scales trivial, becomes the
+   first thing to revisit if TESTING.md's memory tests ever cover loops.
+6. **What architectural debt exists?** History accretes fields by
+   attr-attachment (metrics, val_losses) -- a typed shape change now
+   (before M8 binary logging exists) would be cheap, later it won't be.
+   EarlyStopping remains breadcrumb-minimal; checkpoint-on-best needs
+   checkpoint.py integration -- deferred until the binary format exists
+   so we do not write it twice.
+7. **What assumptions may be wrong?** That one val pass per epoch is the
+   right granularity (some workflows val per-n-steps); that eval-mode
+   restore is always desirable (a caller might WANT to keep eval on --
+   but silent mutation beat optional behavior for v1); that flipped-label
+   val is a representative overfit proxy (it is deliberately adversarial
+   and that is fine for a signal test).
+8. **What should be redesigned before continuing?** Serialize History:
+   once the "training-run log format" roadmap item lands, val_losses
+   must be first-class there, which argues for doing the History typed
+   reshape IN that tranche, not before.
+9. **What should NOT be implemented yet?** No-grad tape suppression
+   engine (worth engineering only when val sets are big), best-epoch
+   weights restore (needs binary checkpoints first), TQDM-style progress
+   (noise in byte-identical differential outputs), val schedulers
+   (ReduceLROnPlateau) -- a schedule keyed on a loss is real but its
+   path-through-History is exactly the History-redesign work, so it
+   waits for that.
+10. **What evidence supports current claims?** `pytest -q` = 391 passing:
+    tests/test_validation.py (6: series recording/distinctness, default
+    unchanged, dropout-silenced-and-restored probe, semantic flipped-val
+    ES stop, E0643, E0644), plus the whole pre-existing fit/fit_loader
+    corpus passing UNCHANGED after the loop unification -- the strongest
+    available evidence byte-behavior is preserved.

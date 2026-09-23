@@ -75,6 +75,32 @@ class EarlyStopping:
         return self.bad_epochs >= self.patience
 
 
+def _run_epoch(model, loss_fn, batches, optimizer=None,
+               metrics: Optional[dict] = None):
+    """One pass over `batches`.
+
+    optimizer=None means VALIDATION (no backward, no step). Returns
+    (mean_loss, {metric_name: mean_value}). Averages are SIMPLE means over
+    batches -- partial last batches count the same as full ones (honest
+    approximation recorded in DD-18; revisit with val splits if it bites).
+    """
+    losses = []
+    metric_sums = {name: 0.0 for name in (metrics or {})}
+    for xb, yb in batches:
+        pred = model(xb)
+        loss = loss_fn(pred, yb)
+        if optimizer is not None:
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
+        losses.append(float(loss.item()))
+        for name, fn in (metrics or {}).items():
+            metric_sums[name] += float(fn(model, xb, yb))
+    n = max(len(losses), 1)
+    return (float(np.mean(losses)) if losses else float("nan"),
+            {k: v / n for k, v in metric_sums.items()})
+
+
 def fit(model, loss_fn, optimizer, x: Tensor, y, epochs: int,
         log_every: int = 0, log: Optional[Callable[[str], None]] = None,
         early_stopping: Optional[EarlyStopping] = None,
@@ -98,15 +124,10 @@ def fit(model, loss_fn, optimizer, x: Tensor, y, epochs: int,
     metric_log = {name: [] for name in (metrics or {})}
     history.metrics = metric_log  # type: ignore[attr-defined]
     for epoch in range(epochs):
-        pred = model(x)
-        loss = loss_fn(pred, y)
-        loss.backward()
-        optimizer.step()
-        optimizer.zero_grad()
-        loss_val = float(loss.item())
+        loss_val, mvals = _run_epoch(model, loss_fn, [(x, y)], optimizer, metrics)
         history.losses.append(loss_val)
-        for name, fn in (metrics or {}).items():
-            metric_log[name].append(float(fn(model, x, y)))
+        for name in metric_log:
+            metric_log[name].append(mvals[name])
         if log_every and (epoch % log_every == 0 or epoch == epochs - 1) and log:
             extra = " ".join(f"{k}={v[-1]:.4f}" for k, v in metric_log.items() if v)
             log(f"epoch {epoch + 1}/{epochs} loss={loss_val:.6f} {extra}".rstrip())
@@ -195,7 +216,9 @@ def fit_loader(model, loss_fn, optimizer, loader: DataLoader, epochs: int,
                log_every: int = 0, log: Optional[Callable[[str], None]] = None,
                early_stopping: Optional[EarlyStopping] = None,
                metrics: Optional[dict] = None,
-               scheduler: "LRScheduler" = None) -> History:
+               scheduler: "LRScheduler" = None,
+               val_loader: "DataLoader" = None,
+               monitor: str = "loss") -> History:
     """Mini-batch training loop: one step per batch, one History entry per
     epoch (the MEAN batch loss of that epoch -- not the last batch's, which
     a noisy final batch would misrepresent).
@@ -212,35 +235,63 @@ def fit_loader(model, loss_fn, optimizer, loader: DataLoader, epochs: int,
         raise TrainError(code="E0638", message="fit_loader: loader produces zero batches "
                                                "(drop_last with batch_size > dataset size?)",
                          stage="train")
+    if val_loader is not None and len(val_loader) == 0:
+        raise TrainError(code="E0642", message="fit_loader: val_loader produces zero batches",
+                         stage="train")
     history = History()
     metric_log = {name: [] for name in (metrics or {})}
     history.metrics = metric_log  # type: ignore[attr-defined]
+    val_losses: List[float] = []
+    history.val_losses = val_losses  # type: ignore[attr-defined]
     for epoch in range(epochs):
-        losses = []
-        for name in metric_log:
-            metric_log[name].append(0.0)
-        for xb, yb in loader:
-            pred = model(xb)
-            loss = loss_fn(pred, yb)
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
-            losses.append(float(loss.item()))
-            for name, fn in (metrics or {}).items():
-                metric_log[name][-1] += float(fn(model, xb, yb))
-        epoch_loss = float(np.mean(losses))
+        epoch_loss, mvals = _run_epoch(model, loss_fn, loader, optimizer, metrics)
         history.losses.append(epoch_loss)
         for name in metric_log:
-            metric_log[name][-1] /= len(losses)
+            metric_log[name].append(mvals[name])
+
+        val_loss_val = None
+        if val_loader is not None:
+            # eval-mode discipline: dropout & co. must not fire during
+            # validation; the model's own mode is RESTORED afterwards so a
+            # caller that left it in train() gets the same object back.
+            was_training = getattr(model, "training", None)
+            if hasattr(model, "eval"):
+                model.eval()
+            val_mean, _ = _run_epoch(model, loss_fn, val_loader, optimizer=None)
+            if was_training is not None and hasattr(model, "train"):
+                model.train(was_training)
+            val_losses.append(val_mean)
+            val_loss_val = val_mean
+
         if scheduler is not None:
             scheduler.step()
         if log_every and (epoch % log_every == 0 or epoch == epochs - 1) and log:
-            extra = " ".join(f"{k}={v[-1]:.4f}" for k, v in metric_log.items() if v)
-            log(f"epoch {epoch + 1}/{epochs} loss={epoch_loss:.6f} {extra}".rstrip())
-        if early_stopping is not None and early_stopping.step(epoch_loss):
-            if log:
-                log(f"early stopping at epoch {epoch + 1} (best={early_stopping.best:.6f})")
-            break
+            parts = [f"{k}={v[-1]:.4f}" for k, v in metric_log.items() if v]
+            if val_loss_val is not None:
+                parts.append(f"val_loss={val_loss_val:.6f}")
+            log(f"epoch {epoch + 1}/{epochs} loss={epoch_loss:.6f} {' '.join(parts)}".rstrip())
+
+        if early_stopping is not None:
+            if monitor == "loss":
+                watched = epoch_loss
+            elif monitor == "val_loss":
+                if val_loss_val is None:
+                    raise TrainError(code="E0643",
+                                     message="fit_loader: monitor='val_loss' requires val_loader",
+                                     stage="train")
+                watched = val_loss_val
+            elif monitor in metric_log:
+                watched = metric_log[monitor][-1]
+            else:
+                raise TrainError(code="E0644",
+                                 message=f"fit_loader: unknown monitor {monitor!r} "
+                                         f"(use 'loss', 'val_loss', or a metric name)",
+                                 stage="train")
+            if early_stopping.step(watched):
+                if log:
+                    log(f"early stopping at epoch {epoch + 1} on {monitor} "
+                        f"(best={early_stopping.best:.6f})")
+                break
     return history
 
 
