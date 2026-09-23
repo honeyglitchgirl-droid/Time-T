@@ -459,3 +459,34 @@ quotient and manufactures a fake "backward bug". tests/contest_conv2d.py
 documents the pattern: perturb in float64, evaluate the forward in
 float64 (`_conv2d_forward` directly), and keep the autodiff comparison
 at the repo's standard 1e-3 tolerance.
+
+
+---
+
+## DD-18: DataLoader + fit_loader + LR schedules (Milestone 8)
+
+**Decisions (v0.6.0):**
+1. `TensorDataset` is the only dataset abstraction: (x, y) Tensors aligned
+   on axis 0. No transforms, no dict-of-columns, no disk formats yet --
+   the honest minimum, rather than a fake-general Dataset protocol.
+2. `DataLoader` NEVER pads and NEVER silently drops: the final partial
+   batch is YIELDED unless `drop_last=True` (both pinned by test). Silent
+   padding/dropping are the classic ways training curves quietly lie.
+3. `shuffle=True` uses a dedicated `np.random.default_rng(seed)` created
+   at construction: iterating twice yields different-but-deterministic
+   permutations, and two loaders with the same seed walk the same stream
+   (pinned by test). The global RNG is untouched -- training cannot
+   perturb library-level randomness elsewhere.
+4. `fit_loader`'s epoch History entry is the MEAN of the epoch's batch
+   losses (not the last batch's, which misreports curves) -- pinned by test
+   with frozen params.
+5. LR schedulers recompute `lr` from the CONSTRUCTION-TIME `base_lr` each
+   step (`base * gamma ** floor(...)`); compounding floats (`lr *= gamma`)
+   would make the schedule path-dependent and untestable as "exact
+   sequence" -- our StepLR/ExponentialLR tests pin exact values to 1e-12.
+6. `fit_loader(scheduler=...)` steps the scheduler ONCE PER EPOCH after
+   that epoch's optimizer steps (textbook order). Per-batch stepping is
+   a silent 100x-too-fast anneal; a test pins the exact final lr after
+   2 epochs x 5 batches.
+7. Schedulers work on any optimizer with an `.lr` attribute (duck-typed on
+   purpose: SGD/Adam/AdamW all qualify). CosineAnnealing clamps at t_max.

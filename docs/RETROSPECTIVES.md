@@ -335,3 +335,67 @@ the optimizer work began only after the IR itself became executable.)
     tests/test_adamw.py (5: bit-identical-at-wd0, directional-decay
     effect, zero-gradient decay isolation, validation, XOR convergence),
     plus example-09 differentially byte-identical across all engines.
+
+
+---
+
+# Entry 6 — v0.6.0, expanding Milestone 8 (DataLoader, fit_loader, LR schedules; DD-18)
+
+1. **What works?** Seeded determinism: same-seed loaders reproduce the
+   exact batch stream across epochs and processes. fit_loader reaches
+   100% train accuracy and ~0.005 loss on the semantic two-block task;
+   all three LR schedules match their formulas to 1e-12; the whole loop
+   runs from Time-T code identically on all three engines.
+2. **What does not work / doesn't exist?** Validation-split plumbing
+   (metrics are computed on the SAME data being trained on -- honest but
+   incomplete), eval()-mode discipline inside fit* (caller responsibility,
+   documented not enforced), workers/prefetch, generator-based datasets,
+   weighted sampling, per-batch scheduler modes, warmup, checkpointing
+   of optimizer+RNG state (resume test covers params only, a shuffled
+   loader mid-epoch is NOT resumed bit-exactly -- nothing claimed it).
+3. **What is untested?** Shuffle uniformity statistics (np.random is
+   trusted, only determinism is pinned), batch_size > n with
+   drop_last=False (behaves as one full batch; not explicitly pinned),
+   DataLoader reuse across fit_loader calls mid-RNG-stream (documented
+   behavior: continues the permutation stream; no test pins which batch
+   composition results), schedules on top of Adam/AdamW interactions
+   (SGD only in e2e).
+4. **What is slow?** fit_loader assembles batches with advanced indexing
+   (`x[bidx]`) creating a fresh copy per batch -- fine at our scales,
+   would matter only with large datasets, which trains in .tt cannot
+   load anyway (no file IO in the language beyond the stdlib).
+5. **What consumes excessive memory?** Same batch-copy note; TensorDataset
+   holds full dataset in RAM by construction (documented).
+6. **What architectural debt exists?** fit and fit_loader duplicate the
+   epoch shell (metrics loop, logging, early stopping) -- a THIRD entry
+   (val splits) should trigger factoring into one loop with a
+   batch-source strategy. LRScheduler duck-types on `optimizer.lr`
+   without an interface definition -- acceptable while we have one
+   optimizer family, needs a protocol if distributed/Per-Param lrs
+   arrive. History remains a bare dataclass with a tacked-on metrics
+   dict (recorded in entry 4).
+7. **What assumptions may be wrong?** That "epoch" boundaries matter to
+   users as the step unit for schedulers (PyTorch convention, fine); that
+   default-rng(seed) is the right determinism contract for data pipes
+   (some frameworks re-seed per epoch instead -- ours continues the
+   stream; DD-18 records the choice); that mean-of-batch-losses is what
+   users expect in History (alternatives: sample-weighted mean -- ours
+   weights PARTIAL last batches equally with full ones. Honest-now,
+   flagged in DD-18 and worth revisiting when val splits exist).
+8. **What should be redesigned before continuing?** Before validation
+   splits land, unify fit/fit_loader around "iterate batches, call
+   step_hook" so the val loop is the same loop with train=False and no
+   optimizer; that kills the per-batch/per-epoch ambiguity once instead
+   of per feature.
+9. **What should NOT be implemented yet?** Data pipelines with
+   workers/prefetch, mixed precision, GradScaler, distributed sampling,
+   weighted samplers, and serialization formats for datasets -- all
+   premature at toy scale (master prompt: primitives before polish,
+   never another MNIST).
+10. **What evidence supports current claims?** `pytest -q` = 385 passing:
+    tests/test_dataloader.py (10: batching/coverage math, seeded-shuffle
+    determinism, partial/drop_last honesty, empty-loader error,
+    epoch-mean pinning, full e2e to 100% acc), tests/test_lr_schedule.py
+    (6: exact lr sequences for all three schedules to 1e-12, per-epoch
+    stepping pin, validation errors, annealed-rescues-divergence e2e),
+    example 10 byte-identical across AST/IR-O0/IR-O1.

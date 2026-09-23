@@ -112,10 +112,16 @@ reproduce every claim below.
   save/load/resume of parameters as deterministic, versioned JSON
   (DD-11); resume correctness is proven by the train-20/save/restore/
   train-30 == uninterrupted-train-50 test.
-- NOT DONE: datasets/dataloader abstraction (fit is FULL-BATCH ONLY and
-  says so), mini-batching, LR schedules, validation splits, mixed
-  precision, training-run log format, binary checkpoint format (needed for
-  larger models).
+- EXPANDED (v0.6.0, DD-18): `TensorDataset` + `DataLoader` (mini-batching;
+  seeded deterministic shuffling with no global-RNG touching; partial
+  final batch yielded by default, drop_last explicit), `fit_loader()`
+  (mean-of-batches epoch metrics, scheduler stepped once per epoch --
+  both pinned by tests) and `StepLR`/`ExponentialLR`/`CosineAnnealingLR`
+  (recomputed-from-base exactness). Reachable from Time-T code (example
+  10: mini-batch training with LR decay, byte-identical on all engines).
+- NOT DONE: validation splits / eval-mode plumbing inside fit*, mixed
+  precision, training-run log format, binary checkpoint format (needed
+  for larger models), distributed anything.
 
 ## Milestone 9 — Native optimization 🟡 PARTIAL (started v0.4.0)
 - DONE (v0.4.0): a working native path — `timet/native.py` C-emitter over

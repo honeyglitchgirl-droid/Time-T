@@ -4,6 +4,31 @@ All notable changes to Time-T are recorded here. Format loosely follows
 Keep a Changelog; versioning follows master prompt §37 (targets, not
 promises).
 
+## [0.6.0] — 2026-09-23 (Milestone 8 expansion: mini-batching + LR schedules)
+
+- **DataLoader / TensorDataset** (DD-18): mini-batch iteration over tensor
+  pairs. `shuffle=True` draws from a dedicated seeded RNG per loader --
+  deterministic across identical loaders, never touching global RNG state.
+  The final partial batch is YIELDED (never padded, never silently
+  dropped) unless `drop_last=True`; both semantics pinned by tests.
+- **fit_loader()**: per-batch optimizer steps, per-epoch History records
+  the MEAN batch loss (not the last batch's -- the silent misreport this
+  tranche's tests exist to forbid). Metrics are averaged per epoch;
+  pluggable schedulers are stepped once per epoch, pinned by a test that
+  would catch per-batch stepping immediately.
+- **StepLR / ExponentialLR / CosineAnnealingLR**: computed from the
+  construction-time base_lr each step (exact recompute -- no compounding-
+  float drift), so tests pin the exact lr sequence to 1e-12. Cosine
+  clamps at t_max.
+- From Time-T code: `train.TensorDataset/DataLoader/fit_loader/StepLR`
+  demonstrated in `examples/10_minibatch_lr_decay.tt` (final loss ~0.0056,
+  byte-identical on AST/IR-O0/IR-O1).
+- An unglamorous-but-important negative test: a test that annealed SGD
+  escapes divergence where constant-lr SGD with the same base lr explodes
+  -- proving lr actually wires through scheduler.step().
+
+Suite: **385 tests** (was 367).
+
 ## [0.5.0] — 2026-09-23 (Milestone 7 expansion: Conv2D, Embedding, AdamW)
 
 Layers grow real vision/NLP shapes (DD-17):

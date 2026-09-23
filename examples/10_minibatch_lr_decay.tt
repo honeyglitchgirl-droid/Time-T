@@ -1,0 +1,24 @@
+// Example 10: mini-batch training with a learning-rate schedule
+// (Milestone 8): TensorDataset + DataLoader(shuffle, seed) + fit_loader
+// + StepLR, on an 8-sample two-class quadrant toy. Deterministic.
+fn main() {
+    let x = tensor([
+        [2.0, 2.0], [3.0, 1.0], [1.0, 3.0], [4.0, 2.0],
+        [-2.0, -2.0], [-3.0, -1.0], [-1.0, -3.0], [-4.0, -2.0]
+    ])
+    let y = tensor([1, 1, 1, 1, 0, 0, 0, 0])
+
+    let ds = train.TensorDataset(x, y)
+    let loader = train.DataLoader(ds, batch_size=4, shuffle=true, seed=7)
+
+    let model = nn.Linear(2, 2, seed=1)
+    let ce = nn.CrossEntropyLoss()
+    let opt = optim.Adam(model.parameters(), lr=0.05)
+    let sched = train.StepLR(opt, step_size=10, gamma=0.5)
+
+    let hist = train.fit_loader(model, ce, opt, loader, 30, scheduler=sched)
+    print(hist.final_loss)
+    print(opt.lr)
+    print(ce(model(x), y))
+    print(model(x))
+}

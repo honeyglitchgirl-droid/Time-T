@@ -7,7 +7,7 @@ sequences work: architecture first, then a small verified vertical slice,
 then expansion in tested layers. **Nothing in this repository is claimed to
 work unless it is backed by a passing test.**
 
-## What exists today (v0.5.0)
+## What exists today (v0.6.0)
 
 - A real lexer, parser, and type checker for a small, brace-delimited
   language (see `docs/LANGUAGE.md`).
@@ -32,7 +32,9 @@ work unless it is backed by a passing test.**
   Dropout (seeded), Conv2D (stride/padding, gradient-checked) and
   Embedding; losses MSE/CrossEntropy/BCE; Sequential. Optimizers: SGD,
   Adam, AdamW (decoupled decay). Training utilities: `train.fit()`
-  (full-batch, honest about it),
+  (full-batch), `train.fit_loader()` with `TensorDataset`/`DataLoader`
+  (seeded-shuffle mini-batching), `StepLR`/`ExponentialLR`/
+  `CosineAnnealingLR` schedules,
   `train.accuracy`, `EarlyStopping`, and versioned deterministic JSON
   checkpoints (`timet/checkpoint.py`) with a tested resume guarantee.
 - A `time-t` CLI: `check`, `run` (incl. `--via-ir` and `--native`),
@@ -40,7 +42,7 @@ work unless it is backed by a passing test.**
   byte-verified subset to a native binary via C + your system compiler)
   are real; `profile`, `export`, `package`, `doctor` remain explicit,
   machine-readable "not implemented yet" stubs (never silent no-ops).
-- 367 automated tests across lexer/parser/typechecker/interpreter/IR/
+- 385 automated tests across lexer/parser/typechecker/interpreter/IR/
   IR-executor/optimizer/tensor/autodiff/backend/nn/train/checkpoint/modules/
   CLI/examples/differential/fuzz/diagnostics (incl. a 3-engine differential gate: same bytes from AST interpreter, IR-O0, and IR-O1) (`pytest -q`).
 - 7 runnable example programs with byte-exact expected output
