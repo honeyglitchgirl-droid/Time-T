@@ -4,6 +4,27 @@ All notable changes to Time-T are recorded here. Format loosely follows
 Keep a Changelog; versioning follows master prompt §37 (targets, not
 promises).
 
+## [0.9.0] — 2026-09-23 (Milestone 8: full training-state checkpoints)
+
+- **`save_state`/`load_state`** (DD-21): v2-family binary files carrying
+  optimizer moments (Adam/AdamW m/v/t, config), scheduler internals
+  (last_epoch/base_lr), an epoch counter, and DataLoader RNG streams by
+  name -- everything a `.ttck` param file lacks for true resumption.
+- **The headline test**: the DD-20 falsification is CLOSED. Adam resume
+  now matches an uninterrupted 50-epoch run BYTE-EXACTLY
+  (train 20 -> save -> fresh objects -> load -> train 30 == train 50).
+- **Position-keyed moments**: optimizer state keyed by param position in
+  construction order (id() cannot cross process boundaries); new
+  `get_state`/`set_state` on SGD/Adam/AdamW validate positions & shapes.
+- **Loud, never half-restored**: E0649..E0658 cover missing/extra
+  sections, type/class mismatches, unknown loader names and
+  param-only-files-as-state. All refusal paths are tested.
+- Resume semantics documented honestly: fit() restarts its History;
+  loader RNG streams continue at the saved point; schedulers continue
+  the exact lr trajectory.
+
+Suite: **414 tests** (was 402).
+
 ## [0.8.0] — 2026-09-23 (Milestone 8: deterministic binary checkpoints)
 
 - **Format v2 `.ttck`** (DD-20): zip of `manifest.json` + raw f32 `.npy`

@@ -130,9 +130,14 @@ reproduce every claim below.
   errors E0645--E0648). Resume theorem re-proven for v2 WITH PLAIN SGD
   only -- Adam's moments aren't checkpointed by either format, and an
   Adam version of the theorem was falsified while testing (DD-20).
-- NOT DONE: optimizer-state (Adam moments) + RNG-stream checkpointing,
-  training-run log format, dtype-faithful binary storage (>f32),
-  distributed anything.
+- EXPANDED (v0.9.0, DD-21): `save_state`/`load_state` training-state
+  checkpoints (optimizer moments by param position, scheduler internals,
+  epoch counter, DataLoader RNG streams). The Adam-resume theorem that
+  DD-20 FALSIFIED for param-only checkpoints now holds BYTE-EXACTLY and
+  is the headline test; half-restored resumes are refused loudly
+  (E0649--E0658), never silent.
+- NOT DONE: training-run log format, dtype-faithful binary storage
+  (>f32), History serialization, distributed anything.
 
 ## Milestone 9 — Native optimization 🟡 PARTIAL (started v0.4.0)
 - DONE (v0.4.0): a working native path — `timet/native.py` C-emitter over

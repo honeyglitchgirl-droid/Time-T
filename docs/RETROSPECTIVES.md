@@ -513,3 +513,72 @@ the optimizer work began only after the IR itself became executable.)
     theorem, extension-independent loading, JSON compat intact, and 6
     corruption-rejection tests), plus the untouched v1 suite and 391 prior
     tests -- all green after the sniffing change to load().
+
+
+---
+
+# Entry 9 — v0.9.0, Milestone 8 (training-state checkpoints; DD-21)
+
+1. **What works?** Full-state resume that is byte-exact under Adam AND
+   SGD, scheduler trajectory continuation, loader stream continuation, a
+   complete loud-refusal path set, and byte-identical state saves (all
+   tested).
+2. **What does not work / doesn't exist?** Epoch-bounded resumption
+   inside fit() itself (you resume by CALLING fit for 30 more epochs --
+   the 'epochs' argument is relative, not absolute; documented, likely
+   permanent), History/log carry-over, multiple model sections in one
+   state file (teacher+student, generator+discriminator pairs crash the
+   single-section design -- noted for GAN-style features), and state
+   save/load for models whose parameter ORDER changed between versions
+   (position-keyed names make reorder = wrong values -- but load_into/
+   _name_parameters NAME keying catches it for params; the OPTIMIZER
+   path is position-keyed and would mis-pair moments on a re-ordered
+   constructor. This is a real latent hazard, recorded here and in the
+   manifest limits -- mitigations are checked only per-shapes within
+   equal lengths).
+3. **What is untested?** Huge moment arrays (state files of GB scale --
+   same BytesIO note as DD-20), restore-into-a-DIFFERENT but
+   shape-identical model (permitted by design; semantic risk above),
+   AdamW resumed with eps drift between versions (config compatibility
+   is taken on trust across file versions -- no version-migration
+   machinery exists).
+4. **What is slow?** Nothing new; the save path serializes f64 moments
+   uncompressed-inside-DEFLATE (arrays come back smaller than the JSON
+   of v1 would have been; no benchmark row yet -- Entry 8's pending note
+   bundles this).
+5. **What consumes excessive memory?** Same BytesIO whole-file pattern as
+   v2 params (Entry 8 item 5) -- now with 2x f64 moment payload, so the
+   streaming-write note doubles in relevance; still bounded by our
+   actual model sizes.
+6. **What architectural debt exists?** Two naming worlds now coexist in
+   one file: params are NAME-keyed, optimizer arrays are POSITION-keyed
+   (paths like optstate/m.3.npy). A principled unification (param NAME
+   -> moment) requires the optimizer to know names -- it currently
+   receives a bare param list, so names would be a parallel argument;
+   deferred but the seam is clear. optim.py's hand-grown state protocol
+   lacks a formal interface (duck-typed again, fine while only three
+   optimizer classes exist).
+7. **What assumptions may be wrong?** That bit_generator.state round-
+   tripping is stable across numpy versions (documented public API,
+   but a version pin in requirements is the real guard); that
+   scheduler.base_lr restoral is sufficient (true for our schedulers
+   since they recompute-from-base; a scheduler with internal counters
+   beyond last_epoch would silently fail -- no such scheduler exists);
+   that users construct resume optimizers over EXACTLY model.parameters()
+   in order (the only supported way documented; the E0653 shape guard
+   catches common reorderings blindly but not all).
+8. **What should be redesigned before continuing?** A statefile VERSION
+   MIGRATION story: today 'version: 2' is hard-rejected for anything
+   else, correct but brittle; the first format tweak is also the first
+   time we must answer 'how do old files load'. Decide then, not now.
+9. **What should NOT be implemented yet?** Distributed-shard state,
+   GC-friendly streaming writes at GB scale, name-keyed optimizer
+   moments (needs the parallel-names design above), state encryption,
+   and LR-restart conveniences (warm restarts are a NEW scheduler, not
+   resume machinery).
+10. **What evidence supports current claims?** `pytest -q` = 414 passing:
+    tests/test_training_state.py (12: byte-exact Adam theorem, AdamW
+    config+moments round trip, exact scheduler continuation, loader
+    stream continuation via wrong-seed-then-restore, five refusal paths
+    E0649-E0658, byte-identical saves, no-moment-yet resume), plus the
+    entire 402-test suite unharmed.

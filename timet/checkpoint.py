@@ -292,3 +292,200 @@ def load_bin(path: Union[str, Path]) -> Dict[str, Tensor]:
                                       stage="checkpoint")
             out[name] = Tensor(arr, dtype="f32", requires_grad=True)
         return out
+
+
+# --------------------------------------------------------------------------- #
+# Training-state checkpoints (DD-21): optimizer moments + scheduler + RNG.
+# This closes the Adam-resume falsification recorded in DD-20: parameter
+# checkpoints alone CANNOT resume an Adam run; state files can.
+# --------------------------------------------------------------------------- #
+def save_state(path: Union[str, Path], model=None, optimizer=None,
+               epoch: int = None, scheduler=None, loaders: dict = None) -> Path:
+    """Save a FULL training state (.ttck binary container).
+
+    Sections: parameter tensors (same layout as save_bin), plus
+    'training': optimizer moments keyed by PARAM POSITION (DD-21),
+    scheduler internals (last_epoch/base_lr), epoch counter, and
+    DataLoader RNG states by NAME. All limit honesty of v2 applies.
+    Position keying assumes the optimizer was constructed over
+    model.parameters() in stable order -- the same assumption load_into
+    makes; violated orders fail loudly at set_state.
+    """
+    named = _name_parameters(model) if model is not None else {}
+    training: dict = {"epoch": None if epoch is None else int(epoch)}
+    opt_arrays: Dict[str, np.ndarray] = {}
+    if optimizer is not None:
+        ostate = optimizer.get_state()
+        cfg = json.loads(json.dumps(ostate.get("config", {}), default=str))
+        training["optimizer"] = {"type": ostate["type"], "config": cfg,
+                                 "current_lr": float(getattr(optimizer, "lr", 0.0)),
+                                 "t": ostate.get("t", {})}
+        for coll_name, coll in ostate.get("arrays", {}).items():
+            for pos, arr in coll.items():
+                opt_arrays[f"{coll_name}.{pos}"] = np.asarray(arr, dtype=np.float64)
+    else:
+        training["optimizer"] = None
+    if scheduler is not None:
+        training["scheduler"] = {
+            "class": type(scheduler).__name__,
+            "last_epoch": int(scheduler.last_epoch),
+            "base_lr": float(scheduler.base_lr),
+        }
+    if loaders:
+        training["loaders"] = {name: loader._rng.bit_generator.state
+                               for name, loader in loaders.items()}
+
+    arrays: Dict[str, np.ndarray] = {}
+    declared: Dict[str, dict] = {}
+    for name, ten in named.items():
+        arr = np.asarray(ten.data)
+        declared[name] = {"shape": list(arr.shape), "dtype": str(arr.dtype),
+                          "stored_dtype": "float32"}
+        arrays[f"tensors/{name}.npy"] = arr.astype(np.float32)
+    for ref, arr in opt_arrays.items():
+        declared[f"__opt__/{ref}"] = {"shape": list(arr.shape), "dtype": str(arr.dtype),
+                                      "stored_dtype": "float64"}
+        arrays[f"optstate/{ref}.npy"] = arr.astype(np.float64)
+
+    manifest = {
+        "format": "timet-training-state",
+        "version": BIN_VERSION,
+        "param_names_must_be_unique": True,
+        "tensors": declared,
+        "training": training,
+        "limits": [
+            "optimizer restored by PARAM POSITION (construction order of its params list)",
+            "History/logs are NOT part of training state (fit restarts its History)",
+            "resumed run continues each loader's RNG stream at the saved point",
+        ],
+    }
+    mbytes = (json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
+        info = zipfile.ZipInfo("manifest.json", date_time=_ZIP_EPOCH)
+        info.compress_type = zipfile.ZIP_DEFLATED
+        info.external_attr = 0
+        zf.writestr(info, mbytes)
+        for entry in sorted(arrays):
+            raw = io.BytesIO()
+            np.save(raw, arrays[entry], allow_pickle=False)
+            info = zipfile.ZipInfo(entry, date_time=_ZIP_EPOCH)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0
+            zf.writestr(info, raw.getvalue())
+    path = Path(path)
+    path.write_bytes(buf.getvalue())
+    return path
+
+
+def load_state(path: Union[str, Path], model=None, optimizer=None,
+               scheduler=None, loaders: dict = None) -> dict:
+    """Restore a training-state file. Returns the training section (epoch
+    etc.). Everything restoreable that was saved MUST be restorable into
+    the given objects or the load ERRORS -- a half-restored resume is
+    worse than none at all."""
+    path = Path(path)
+    with zipfile.ZipFile(path, "r") as zf:
+        if "manifest.json" not in set(zf.namelist()):
+            raise CheckpointError(code="E0646",
+                                  message="training-state file missing manifest.json",
+                                  stage="checkpoint")
+        manifest = json.loads(zf.read("manifest.json").decode("utf-8"))
+        if manifest.get("format") != "timet-training-state":
+            raise CheckpointError(code="E0649",
+                                  message=f"not a training-state file "
+                                          f"(format={manifest.get('format')!r})",
+                                  stage="checkpoint")
+        training = manifest.get("training") or {}
+
+        if model is not None:
+            params = {}
+            for name, spec in manifest.get("tensors", {}).items():
+                if name.startswith("__opt__/"):
+                    continue
+                arr = np.load(io.BytesIO(zf.read(f"tensors/{name}.npy")), allow_pickle=False)
+                params[name] = arr
+            named = _name_parameters(model)
+            missing = sorted(set(named) - set(params))
+            extra = sorted(set(params) - set(named))
+            if missing or extra:
+                raise CheckpointError(code="E0650",
+                                      message=f"state param mismatch: missing={missing}, extra={extra}",
+                                      stage="checkpoint")
+            for name, arr in params.items():
+                if named[name].data.shape != arr.shape:
+                    raise CheckpointError(code="E0650",
+                                          message=f"state param '{name}' shape {arr.shape} "
+                                                  f"!= model {named[name].data.shape}",
+                                          stage="checkpoint")
+                named[name].data = arr.astype(named[name].data.dtype)
+
+        osaved = training.get("optimizer")
+        if osaved is not None:
+            if optimizer is None:
+                raise CheckpointError(code="E0651",
+                                      message="file contains optimizer state but no optimizer "
+                                              "was passed to load_state",
+                                      stage="checkpoint")
+            if type(optimizer).__name__ != osaved["type"]:
+                raise CheckpointError(code="E0652",
+                                      message=f"optimizer type mismatch: file has {osaved['type']!r}, "
+                                              f"got {type(optimizer).__name__!r}",
+                                      stage="checkpoint")
+            arrays: Dict[str, Dict[str, np.ndarray]] = {"m": {}, "v": {}}
+            for name in manifest.get("tensors", {}):
+                if not name.startswith("__opt__/"):
+                    continue
+                ref = name[len("__opt__/"):]
+                coll, pos = ref.split(".", 1)
+                arr = np.load(io.BytesIO(zf.read(f"optstate/{ref}.npy")), allow_pickle=False)
+                arrays[coll][pos] = arr
+            try:
+                optimizer.set_state({"type": osaved["type"], "config": osaved["config"],
+                                     "arrays": arrays, "t": osaved.get("t", {})})
+            except ValueError as e:
+                raise CheckpointError(code="E0653", message=f"cannot restore optimizer: {e}",
+                                      stage="checkpoint")
+        elif optimizer is not None:
+            raise CheckpointError(code="E0654",
+                                  message="file has NO optimizer state but an optimizer was "
+                                          "passed to load_state -- refusing silent mismatch",
+                                  stage="checkpoint")
+
+        ssaved = training.get("scheduler")
+        if ssaved is not None:
+            if scheduler is None:
+                raise CheckpointError(code="E0655",
+                                      message="file contains scheduler state but no scheduler "
+                                              "was passed to load_state",
+                                      stage="checkpoint")
+            if type(scheduler).__name__ != ssaved["class"]:
+                raise CheckpointError(code="E0656",
+                                      message=f"scheduler class mismatch: file has "
+                                              f"{ssaved['class']!r}, got {type(scheduler).__name__!r}",
+                                      stage="checkpoint")
+            scheduler.last_epoch = ssaved["last_epoch"]
+            scheduler.base_lr = ssaved["base_lr"]
+        if osaved is not None and scheduler is None and "scheduler" not in training \
+                and osaved.get("current_lr") is not None:
+            optimizer.lr = osaved["current_lr"]
+        if scheduler is not None and osaved is not None:
+            optimizer.lr = osaved.get("current_lr", optimizer.lr)
+
+        lsaved = training.get("loaders") or {}
+        if lsaved:
+            if loaders is None:
+                raise CheckpointError(code="E0657",
+                                      message="file contains loader RNG state but no loaders "
+                                              "were passed to load_state",
+                                      stage="checkpoint")
+            for name, st in lsaved.items():
+                if name not in loaders:
+                    raise CheckpointError(code="E0658",
+                                          message=f"state has RNG for loader {name!r} which was "
+                                                  f"not passed to load_state",
+                                          stage="checkpoint")
+                rng = np.random.default_rng()
+                rng.bit_generator.state = st
+                loaders[name]._rng = rng
+        return training

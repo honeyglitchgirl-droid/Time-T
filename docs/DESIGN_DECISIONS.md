@@ -547,3 +547,34 @@ at the repo's standard 1e-3 tolerance.
    observed on the canonical task). Optimizer-state checkpointing is now
    explicitly and prominently NOT DONE in both formats, and the v2
    theorem is pinned with SGD byte-exactly.
+
+
+---
+
+## DD-21: Training-state checkpoints (closing the DD-20 falsification)
+
+**Decisions (v0.9.0):**
+1. `save_state`/`load_state` write a v2-family binary file with a
+   `training` section: optimizer moments (m/v/t), scheduler internals
+   (last_epoch, base_lr), epoch counter, and DataLoader RNG states by
+   name. The Adam-resume theorem that DD-20 FALSIFIED for param-only
+   checkpoints now holds BYTE-EXACTLY and is the headline test.
+2. Optimizer moments are keyed by PARAM POSITION (index in the
+   optimizer's construction list), never by object id (ids don't survive
+   load; positions do -- the same order-stability load_into already
+   depends on). Optimizers gained `get_state()`/`set_state()`; SGD's
+   state is config-only, Adam/AdamW carry arrays + timestep, AdamW adds
+   weight_decay to config.
+3. HALF-RESTORED RESUMES ARE REFUSED: file-has-optimizer-but-none-
+   passed (E0651), type mismatch (E0652), set_state position/shape
+   errors (E0653), optimizer-passed-but-file-has-none (E0654), scheduler
+   analogues (E0655/E0656), unknown loader names (E0658), and param-only
+   files fed to load_state (E0649) all ERROR. A quiet half-resume is the
+   bug nobody notices for a week; Time-T chooses the loud path.
+4. History/logs are NOT part of training state -- a resumed fit()
+   restarts its History by design (stated in the file's own limits
+   section). Best-epoch weights remain checkpoint.py's job.
+5. Loader RNG restores by REPLACING the loader's generator with one
+   seeded to the saved bit-generator state -- streams continue exactly
+   where saved (tested: wrong-seed loader corrected by restore produces
+   the uninterrupted run's next epoch).
