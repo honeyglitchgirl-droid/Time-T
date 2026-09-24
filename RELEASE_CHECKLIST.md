@@ -1,15 +1,29 @@
-# Time-T v2.1.0 — Release Engineering Checklist (Phase R)
+# Time-T v2.1.0 Final Release Checklist
 
-- [x] Full automated test suite passes (`488 passed, 0 failed`).
-- [x] No `TODO`, `FIXME`, or `XXX` placeholders in production source code.
-- [x] All 12 CLI subcommands implemented with `--help` and `--json` support.
-- [x] Zero division and recursion safety limits strictly enforced with diagnostics.
-- [x] Native AOT C-emitter (`time-t build`) verified against host C compilers.
-- [x] Native C JIT kernel accelerator verified with numerical tests.
-- [x] Multi-threaded OpenMP SIMD backend verified.
-- [x] Portable checkpoints (HuggingFace `safetensors`, NumPy `.npz`, `.ttck`) verified.
-- [x] INT8 dynamic quantization and mobile deployment packaging (`.ttm`) verified.
-- [x] 16 runnable example programs produce byte-exact output across all 3 execution engines.
-- [x] Version metadata synchronized to `v2.1.0` across package, docs, and CLI.
-- [x] Security and Threat Model documents created (`SECURITY.md`, `THREAT_MODEL.md`).
-- [x] Hardware validation plans created (`hardware/CPU_VALIDATION_PLAN.md`, etc.).
+- [x] Version metadata synchronized across `timet/__init__.py`, `docs/CHANGELOG.md`, `README.md`, and CLI (`2.1.0`).
+- [x] README synchronized: current version `2.1.0`, test count `493`, example count `16`.
+- [x] Changelog synchronized with v2.1.0 release notes and historical logs preserved.
+- [x] Test count synchronized across all documentation (`493 passed, 0 failed`).
+- [x] Example count synchronized (`16 runnable examples`).
+- [x] Full test suite completed (`493 passed in 11.35s`).
+- [x] No unresolved test failures (0 failed, 0 errors).
+- [x] Expected skips documented (0 skipped; 100% execution).
+- [x] CLI verified: all 12 subcommands respond to `--help` and execution.
+- [x] Clean install verified outside repository tree (`CLEAN_INSTALL_REPORT.md`).
+- [x] `bin/time-t` file mode set to executable `0755` (`100755` in git tree).
+- [x] Release archive verified (`time-t-2.1.0.tar.gz`).
+- [x] SHA-256 generated and verified in `RELEASE_MANIFEST.md`.
+- [x] No secrets in codebase or release archive.
+- [x] No absolute local paths in release distribution.
+- [x] Security review complete (`SECURITY.md`, `THREAT_MODEL.md`).
+- [x] Native memory checks complete or externally scheduled (`tools/stress_test.py`, `hardware/CPU_VALIDATION_PLAN.md`).
+- [x] Fuzzing complete or externally scheduled (`tests/test_fuzz.py`).
+- [x] JIT stress test complete (`tools/stress_test.py`).
+- [x] SIMD fallback tested (`tests/test_simd_backend.py`).
+- [x] Serialization corruption tests complete (`tests/test_checkpoint.py`, `tests/test_checkpoint_bin.py`).
+- [x] ABI documented and tested (`tests/test_native.py`, `docs/ARCHITECTURE.md`).
+- [x] CPU validation plan complete (`hardware/CPU_VALIDATION_PLAN.md`).
+- [x] ARM64 validation plan complete (`hardware/ARM64_VALIDATION_PLAN.md`).
+- [x] GPU validation plan complete (`hardware/GPU_VALIDATION_PLAN.md`).
+- [x] Hardware limitations explicitly documented (`UNVERIFIED-HARDWARE`).
+- [x] Final status rule adhered: `PRODUCTION-READY-CANDIDATE`.

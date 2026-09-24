@@ -608,7 +608,16 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except FileNotFoundError as e:
+        print(f"error: file not found: {e.filename}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        if os.environ.get("TIMET_DEBUG"):
+            raise
+        print(f"error: {e}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

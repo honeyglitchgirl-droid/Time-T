@@ -126,3 +126,10 @@ def test_cli_reports_missing_module_as_diagnostic(tmp_path):
     payload = json.loads(proc.stdout)
     assert payload["status"] == "error"
     assert payload["results"][0]["diagnostic"]["code"] == "E0213"
+
+def test_cli_clean_error_on_missing_file():
+    """Verify CLI prints clean error without uncaught traceback on missing file."""
+    res = run_cli("run", "non_existent_file_test_path.tt")
+    assert res.returncode == 1
+    assert "error: file not found:" in res.stderr
+    assert "Traceback" not in res.stderr
