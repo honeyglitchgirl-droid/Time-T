@@ -695,33 +695,36 @@ the optimizer work began only after the IR itself became executable.)
 
 ---
 
-# Entry 13 — v0.12.0, Milestone 7 expansion (RMSNorm & TransformerLM; DD-25)
+# Entry 14 — v0.13.0, Milestone 11 (Interoperability & Model Export; DD-26)
 
-1. **What works?** RMSNorm (`timet.nn.RMSNorm`, `timet.nn.rms_norm`) with
-   finite-difference checked gradients; multi-dimensional `CrossEntropyLoss`
-   for sequence modeling `(*, C)`; complete autoregressive `TransformerLM`
-   with causal attention masking; end-to-end next-token prediction
-   convergence; runnable Time-T example `examples/14_transformer_lm.tt`
-   producing byte-identical output across AST, IR-O0, and IR-O1 engines.
-2. **What does not work / doesn't exist?** Generation loop with sampling
-   temperature / top-k / top-p (forward logits currently evaluated);
-   rotary position embeddings (RoPE).
-3. **What is untested?** Vocabularies > 50,000 words.
-4. **What is slow?** Quadratic causal attention computation in Python/NumPy;
-   appropriate for small language models and unit verification.
-5. **What consumes excessive memory?** Causal mask tensor and attention scores
-   stored on autograd tape during training.
-6. **What architectural debt exists?** KV caching for incremental generation
-   is not implemented yet.
-7. **What assumptions may be wrong?** Learned absolute positional embeddings
-   are used (simple and reliable, though modern LLMs increasingly use RoPE).
-8. **What should be redesigned before continuing?** RoPE and KV-caching
-   generation utilities should be introduced when building inference tooling.
-9. **What should NOT be implemented yet?** PagedAttention or quantization.
-10. **What evidence supports current claims?** `pytest -q` = 455 passing:
-    tests in `tests/test_transformer.py` (RMSNorm forward/backward,
-    TransformerLM next-token memorization test reaching 100% accuracy),
-    and differential 3-engine verification on example 14.
+1. **What works?** HuggingFace `safetensors` export (`checkpoint.save_safetensors`)
+   and loading (`checkpoint.load_safetensors`) matching standard binary format;
+   NumPy `.npz` archive export (`checkpoint.save_npz`) and loading (`checkpoint.load_npz`);
+   content-sniffing autodetection in `checkpoint.load` supporting `.safetensors`,
+   `.npz`, `.ttck` (Zip), and `.json`; CLI `time-t export` subcommand with JSON
+   diagnostics (E0800, E0801) converting between all supported formats.
+2. **What does not work / doesn't exist?** ONNX export/import (graph tracing / ONNX proto
+   generation); C FFI / C ABI bindings (C header generation); memory-mapped
+   safetensors loading (files currently read into buffer).
+3. **What is untested?** Multi-gigabyte safetensors files (>2GB offsets); safetensors
+   files containing unconventional dtypes (e.g. BF16, FP8).
+4. **What is slow?** Reading entire safetensors payload into memory rather than `mmap`.
+5. **What consumes excessive memory?** Reading full raw binary buffers into memory for
+   safetensors/npz.
+6. **What architectural debt exists?** Checkpoint serialization and export live in
+   `timet/checkpoint.py`; as export formats grow (e.g. ONNX, GGUF), an `export` package
+   may be warranted.
+7. **What assumptions may be wrong?** Little-endian byte order is assumed for all
+   tensors, which is standard on modern x86_64 and ARM64.
+8. **What should be redesigned before continuing?** Memory-mapping (`mmap`) should be
+   added to `load_safetensors` when loading models > 100M parameters.
+9. **What should NOT be implemented yet?** Full ONNX runtime integration or C FFI
+   cross-compilation.
+10. **What evidence supports current claims?** `pytest -q` = 459 passing:
+    `tests/test_interop.py` (4 tests covering safetensors roundtrip, npz roundtrip,
+    CLI export to safetensors & npz with JSON output, and CLI export error diagnostics),
+    plus all 455 pre-existing tests passing without regressions.
+
 
 
 

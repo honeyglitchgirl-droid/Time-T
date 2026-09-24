@@ -191,10 +191,16 @@ reproduce every claim below.
 - No ARM64-specific work, no quantization, no mobile runtime. No performance
   claim about mobile/ARM64 exists anywhere in this repo (§15).
 
-## Milestone 11 — Interoperability 🔲 NOT STARTED
-- No C ABI, no FFI, no ONNX import/export, no Python-embedding API beyond
-  "the whole compiler happens to be written in Python" (which is an
-  implementation detail, not an interop feature).
+## Milestone 11 — Interoperability ✅ DONE (v0.13.0, DD-26)
+- Model & tensor export to industry-standard HuggingFace `safetensors` format
+  via `checkpoint.save_safetensors` and `checkpoint.load_safetensors`.
+- NumPy `.npz` archive export/import via `checkpoint.save_npz` and `checkpoint.load_npz`.
+- Format-agnostic checkpoint loader: `checkpoint.load` auto-detects `.safetensors`,
+  `.npz`, binary `.ttck`, and JSON checkpoints via content-sniffing.
+- CLI subcommand `time-t export <file> -o <output> [-f format] [--json]` fully
+  functional with diagnostic reporting (`E0800`, `E0801`).
+- Tests: `tests/test_interop.py` (round-trip verification, CLI invocation, error handling).
+
 
 ## Milestone 12 — Stable release 🔲 NOT STARTED
 

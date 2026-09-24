@@ -23,7 +23,7 @@ from timet.interpreter import Interpreter, RuntimeErr
 from timet.backend import get_default_backend
 from timet import memory
 
-NOT_IMPLEMENTED = {"profile", "export", "package", "doctor"}
+NOT_IMPLEMENTED = {"profile", "package", "doctor"}
 
 
 def _fresh_loader():
@@ -180,6 +180,56 @@ def cmd_bench(args) -> int:
     return 0
 
 
+def cmd_export(args) -> int:
+    """Export a model checkpoint to portable formats (safetensors, npz, bin, json)."""
+    from timet import checkpoint
+    try:
+        in_path = Path(args.file)
+        if not in_path.is_file():
+            _emit_error(Diagnostic(code="E0800", message=f"export: file not found '{args.file}'",
+                                   stage="export"), args.json)
+            return 1
+        tensors = checkpoint.load(in_path)
+        out_path = Path(args.output)
+        fmt = args.format.lower() if args.format else None
+        if fmt is None:
+            if out_path.suffix == ".safetensors":
+                fmt = "safetensors"
+            elif out_path.suffix == ".npz":
+                fmt = "npz"
+            elif out_path.suffix in (".ttck", ".bin"):
+                fmt = "bin"
+            elif out_path.suffix == ".json":
+                fmt = "json"
+            else:
+                fmt = "safetensors"
+
+        if fmt == "safetensors":
+            checkpoint.save_safetensors(tensors, out_path)
+        elif fmt == "npz":
+            checkpoint.save_npz(tensors, out_path)
+        elif fmt == "bin":
+            checkpoint.save_bin(tensors, out_path)
+        elif fmt == "json":
+            checkpoint.save(tensors, out_path)
+        else:
+            _emit_error(Diagnostic(code="E0801",
+                                   message=f"export: unsupported format '{fmt}' (choose safetensors, npz, bin, json)",
+                                   stage="export"), args.json)
+            return 1
+
+        payload = {"status": "ok", "input": str(in_path), "output": str(out_path),
+                   "format": fmt, "tensors": len(tensors)}
+        if args.json:
+            print(json.dumps(payload))
+        else:
+            print(f"exported {len(tensors)} tensor(s) to {out_path} ({fmt})")
+        return 0
+    except Diagnostic as e:
+        _emit_error(e, args.json)
+        return 1
+
+
 def cmd_build(args) -> int:
     """Native compilation via the C-emitter slice (Milestone 9, DD-15).
     On subset violations, fails with an honest, machine-readable diagnostic
@@ -304,6 +354,14 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--cc", default=None, help="C compiler to use (default: first of gcc/cc/clang on PATH)")
     add_json_flag(sp)
     sp.set_defaults(func=cmd_build)
+
+    sp = sub.add_parser("export", help="export a checkpoint to portable formats (safetensors, npz, bin, json)")
+    sp.add_argument("file", help="input checkpoint file (.ttck, .json, etc.)")
+    sp.add_argument("-o", "--output", required=True, help="output file path")
+    sp.add_argument("-f", "--format", choices=["safetensors", "npz", "bin", "json"], default=None,
+                    help="target format (inferred from output extension if omitted)")
+    add_json_flag(sp)
+    sp.set_defaults(func=cmd_export)
 
     for name in NOT_IMPLEMENTED:
         sp = sub.add_parser(name, help=f"(not implemented yet) {name}")

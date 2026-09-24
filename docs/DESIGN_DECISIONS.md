@@ -576,7 +576,25 @@ at the repo's standard 1e-3 tolerance.
    section). Best-epoch weights remain checkpoint.py's job.
 ---
 
-## DD-25: RMSNorm, Multi-dimensional CrossEntropyLoss, and TransformerLM (Milestone 7 expansion)
+## DD-26: Portable Model Export and Format Interoperability (Milestone 11, Master Prompt §20, §24, §25)
+
+**Decision (v0.13.0):**
+1. HuggingFace Safetensors export and import:
+   - `save_safetensors` writes valid, portable safetensors binary format
+     (8-byte little-endian header length `N`, `N`-byte UTF-8 JSON header containing
+     tensor shapes, dtypes, and byte offsets, followed by contiguous raw buffer bytes).
+   - `load_safetensors` parses safetensors headers and extracts tensors directly.
+2. NumPy `.npz` archive export and import:
+   - `save_npz` and `load_npz` allow direct interchange with the scientific Python ecosystem.
+3. Content-sniffed format auto-detection in `checkpoint.load(path)`:
+   - Auto-detects `.ttck` (Zip with `manifest.json`), `.npz` (Zip of `.npy` entries),
+     `.safetensors` (8-byte unsigned integer header length prefix), and `.json` (Time-T v1 JSON format).
+4. CLI `time-t export`:
+   - Subcommand `time-t export <input_file> -o <output_file> [-f format] [--json]`
+     supports conversion between all supported checkpoint formats (`safetensors`, `npz`, `bin`, `json`).
+   - Emits structured diagnostic errors `E0800` (file error) and `E0801` (conversion failure).
+5. Interoperability suite `tests/test_interop.py` verifies byte accuracy and round-trip preservation.
+
 
 **Decisions (v0.12.0):**
 1. `RMSNorm` (Zhang & Sennrich 2019) layer and `rms_norm` functional operator:

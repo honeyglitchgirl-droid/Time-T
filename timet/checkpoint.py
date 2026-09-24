@@ -22,13 +22,14 @@ from __future__ import annotations
 
 import io
 import json
+import struct
 import zipfile
 from pathlib import Path
 from typing import Dict, List, Union
 
 import numpy as np
 
-from timet.tensor import Tensor
+from timet.tensor import Tensor, tensor
 from timet.diagnostics import Diagnostic
 
 FORMAT = "timet-checkpoint"
@@ -126,14 +127,44 @@ def save(target, path: Union[str, Path]) -> Path:
 
 
 def load(path: Union[str, Path]) -> Dict[str, Tensor]:
-    """Load a checkpoint file into {name: Tensor} (no model required)."""
+    """Load a checkpoint file into {name: Tensor} (no model required).
+    Sniffs content by magic header:
+      - PK.. -> ZIP binary (.ttck) or NPZ (.npz)
+      - uint64 length header -> Safetensors (.safetensors)
+      - JSON string -> timet-checkpoint v1 (.json)
+    """
     path = Path(path)
-    # format detection by CONTENT (zip magic), not extension:
-    # mis-named files still load correctly.
     try:
         with open(path, "rb") as fh:
-            if fh.read(2) == b"PK":
-                return load_bin(path)
+            magic8 = fh.read(8)
+        if magic8.startswith(b"PK"):
+            # Could be .ttck (zip with manifest.json) or .npz (zip of .npy files)
+            try:
+                with zipfile.ZipFile(path, "r") as zf:
+                    if "manifest.json" in zf.namelist():
+                        return load_bin(path)
+                    return load_npz(path)
+            except (OSError, zipfile.BadZipFile) as e:
+                raise CheckpointError(
+                    code="E0645",
+                    message=f"cannot read binary checkpoint: {e}",
+                    stage="checkpoint",
+                )
+
+        # Check for safetensors: first 8 bytes is uint64 header size
+        if len(magic8) == 8:
+            h_len = struct.unpack("<Q", magic8)[0]
+            if 0 < h_len < 100_000_000:
+                # check if following bytes are valid json
+                try:
+                    with open(path, "rb") as fh:
+                        fh.seek(8)
+                        h_bytes = fh.read(h_len)
+                        h_obj = json.loads(h_bytes.decode("utf-8"))
+                        if isinstance(h_obj, dict):
+                            return load_safetensors(path)
+                except Exception:
+                    pass
         payload = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError) as e:
         raise CheckpointError(code="E0623", message=f"cannot read checkpoint: {e}",
@@ -163,6 +194,7 @@ def load(path: Union[str, Path]) -> Dict[str, Tensor]:
         dtype = spec["dtype"] if spec["dtype"] in ("f32", "f64", "i32", "i64", "bool") else "f32"
         out[name] = Tensor(arr, dtype=dtype, requires_grad=True)
     return out
+
 
 
 def load_into(target, path: Union[str, Path], strict: bool = True):
@@ -292,6 +324,83 @@ def load_bin(path: Union[str, Path]) -> Dict[str, Tensor]:
                                       stage="checkpoint")
             out[name] = Tensor(arr, dtype="f32", requires_grad=True)
         return out
+
+
+# --------------------------------------------------------------------------- #
+# Portable Interoperability Formats: safetensors and npz (Milestone 11, DD-26)
+# --------------------------------------------------------------------------- #
+def save_safetensors(target, path: Union[str, Path]) -> Path:
+    """Save model or tensor mapping to HuggingFace safetensors format."""
+    named = _name_parameters(target) if (hasattr(target, "parameters") or isinstance(target, (list, tuple))) else target
+    header = {}
+    offset = 0
+    raw_bytes = bytearray()
+    dtype_map = {"f32": "F32", "f64": "F64", "i32": "I32", "i64": "I64", "bool": "BOOL"}
+    for name in sorted(named.keys()):
+        t = named[name]
+        arr = np.asarray(t.data)
+        b = arr.tobytes()
+        n = len(b)
+        dt = dtype_map.get(t.dtype, "F32")
+        header[name] = {
+            "dtype": dt,
+            "shape": list(t.shape),
+            "data_offsets": [offset, offset + n],
+        }
+        offset += n
+        raw_bytes.extend(b)
+    h_json = json.dumps(header, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    h_len = len(h_json)
+    path = Path(path)
+    with open(path, "wb") as f:
+        f.write(struct.pack("<Q", h_len))
+        f.write(h_json)
+        f.write(raw_bytes)
+    return path
+
+
+def load_safetensors(path: Union[str, Path]) -> Dict[str, Tensor]:
+    """Load tensors from a HuggingFace safetensors file."""
+    path = Path(path)
+    try:
+        with open(path, "rb") as f:
+            header_len_bytes = f.read(8)
+            if len(header_len_bytes) < 8:
+                raise CheckpointError(code="E0645", message="safetensors file truncated", stage="checkpoint")
+            h_len = struct.unpack("<Q", header_len_bytes)[0]
+            header = json.loads(f.read(h_len).decode("utf-8"))
+            raw_data = f.read()
+        res = {}
+        np_map = {"F32": np.float32, "F64": np.float64, "I32": np.int32, "I64": np.int64, "BOOL": np.bool_}
+        for name, meta in header.items():
+            start, end = meta["data_offsets"]
+            buf = raw_data[start:end]
+            dt = np_map.get(meta["dtype"], np.float32)
+            arr = np.frombuffer(buf, dtype=dt).reshape(meta["shape"])
+            res[name] = Tensor(arr, requires_grad=True)
+        return res
+    except Exception as e:
+        raise CheckpointError(code="E0623", message=f"cannot read safetensors: {e}", stage="checkpoint")
+
+
+def save_npz(target, path: Union[str, Path]) -> Path:
+    """Save model or tensor mapping to NumPy .npz archive."""
+    named = _name_parameters(target) if (hasattr(target, "parameters") or isinstance(target, (list, tuple))) else target
+    arrays = {k: np.asarray(t.data) for k, t in named.items()}
+    path = Path(path)
+    np.savez(path, **arrays)
+    return path
+
+
+def load_npz(path: Union[str, Path]) -> Dict[str, Tensor]:
+    """Load tensors from a NumPy .npz archive."""
+    path = Path(path)
+    try:
+        data = np.load(path)
+        return {k: Tensor(data[k], requires_grad=True) for k in data.files}
+    except Exception as e:
+        raise CheckpointError(code="E0623", message=f"cannot read npz: {e}", stage="checkpoint")
+
 
 
 # --------------------------------------------------------------------------- #

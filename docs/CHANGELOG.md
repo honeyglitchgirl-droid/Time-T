@@ -4,7 +4,25 @@ All notable changes to Time-T are recorded here. Format loosely follows
 Keep a Changelog; versioning follows master prompt §37 (targets, not
 promises).
 
+## [0.13.0] — 2026-09-24 (Milestone 11: Interoperability & Model Export)
+
+- **HuggingFace `safetensors` Export & Import** (DD-26): Portable, standard
+  serialization (`save_safetensors`, `load_safetensors`) storing shapes,
+  dtypes, and contiguous raw buffers with 8-byte uint64 JSON header length.
+- **NumPy `.npz` Export & Import** (DD-26): Direct export (`save_npz`) and
+  loading (`load_npz`) to/from NumPy `.npz` archives.
+- **Content-sniffing auto-detection**: `checkpoint.load` automatically
+  distinguishes `.ttck` (ZIP binary), `.npz` (NumPy archive), `.safetensors`
+  (uint64 header), and `.json` (Time-T v1 JSON).
+- **CLI `time-t export`**: Subcommand implemented for file conversion across
+  safetensors, npz, bin, and json formats, with JSON error reporting (E0800, E0801).
+- **Interoperability tests**: `tests/test_interop.py` verifies byte accuracy,
+  CLI invocation, and error handling.
+
+Suite: **459 tests** (was 455).
+
 ## [0.12.0] — 2026-09-24 (Milestone 7: RMSNorm, Multi-dim CrossEntropyLoss, and TransformerLM)
+
 
 - **`RMSNorm` and `rms_norm`** (DD-25): Root Mean Square Layer Normalization
   (Zhang & Sennrich 2019) with finite-difference gradient checks.
