@@ -29,7 +29,7 @@ work unless it is backed by a passing test.**
   (`SGD`, `Adam`) — proven by training runs that must reach loss/accuracy
   thresholds in tests, not just "loss went down".
 - Neural-network layers: Linear, ReLU/Sigmoid/Tanh/GELU/Softmax, Flatten,
-  Dropout (seeded), Conv2D (stride/padding, gradient-checked),
+  Dropout (seeded), Conv1D/Conv2D (stride/padding, gradient-checked),
   Embedding, LayerNorm (affine scale/shift, gradient-checked),
   MultiheadAttention (multi-head scaled dot-product attention, gradient-checked),
   and TransformerBlock (Pre-LN Transformer Encoder);
@@ -49,12 +49,12 @@ work unless it is backed by a passing test.**
   byte-verified subset to a native binary via C + your system compiler)
   are real; `profile`, `export`, `package`, `doctor` remain explicit,
   machine-readable "not implemented yet" stubs (never silent no-ops).
-- 437 automated tests across lexer/parser/typechecker/interpreter/IR/
+- 451 automated tests across lexer/parser/typechecker/interpreter/IR/
   IR-executor/optimizer/tensor/autodiff/backend/nn/train/checkpoint/modules/
-  CLI/examples/differential/fuzz/diagnostics/layernorm/transformer (incl. a 3-engine differential gate: same bytes from AST interpreter, IR-O0, and IR-O1) (`pytest -q`).
-- 9 runnable example programs with byte-exact expected output
+  CLI/examples/differential/fuzz/diagnostics/conv1d/layernorm/transformer (incl. a 3-engine differential gate: same bytes from AST interpreter, IR-O0, and IR-O1) (`pytest -q`).
+- 10 runnable example programs with byte-exact expected output
   (`examples/*.tt` + `examples/*.expected`), incl. Adam + cross-entropy
-  XOR classifier, Conv2D center detector, LayerNorm MLP, and Transformer Block written in Time-T.
+  XOR classifier, Conv2D center detector, LayerNorm MLP, Transformer Block, and Conv1D sequence classifier written in Time-T.
 
 
 - A real (not fabricated) benchmark harness with results written to

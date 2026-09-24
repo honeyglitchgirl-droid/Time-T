@@ -1,13 +1,13 @@
 """Neural-network layer library (master prompt sections 8, 22).
 
-Implemented (all covered by tests in tests/test_nn.py, tests/test_layernorm.py, tests/test_transformer.py):
-  Layers:    Linear, ReLU, Sigmoid, Tanh, GELU, Softmax, Flatten, Conv2D, Embedding,
+Implemented (all covered by tests in tests/test_nn.py, tests/test_layernorm.py, tests/test_transformer.py, tests/test_conv1d.py):
+  Layers:    Linear, ReLU, Sigmoid, Tanh, GELU, Softmax, Flatten, Conv1D, Conv2D, Embedding,
              LayerNorm, MultiheadAttention, TransformerBlock, Dropout, Sequential
   Losses:    MSELoss, CrossEntropyLoss, BCELoss
   Plumbing:  Module.parameters(), Module.train()/eval() (recursive)
 
 Still NOT implemented (see docs/ROADMAP.md, Milestone 7):
-  Conv1D, BatchNorm,
+  BatchNorm,
   weight-initialization schemes beyond Kaiming-uniform.
 
 """
@@ -118,6 +118,115 @@ class Flatten(Module):
             raise NNError(code="E0610", message="Flatten: expected at least 1 dimension",
                           stage="nn")
         return x.reshape((x.shape[0], -1)) if x.ndim > 1 else x
+
+
+class Conv1D(Module):
+    """1-D cross-correlation layer over NCL tensors:
+    input (N, C_in, L) -> output (N, C_out, L')
+    with L' = (L + 2*padding - kernel_size) // stride + 1.
+
+    Implementation: im2col + matmul with exact col2im backward.
+    Gradients checked against central finite differences for input, weight, and bias.
+    """
+
+    def __init__(self, in_channels: int, out_channels: int, kernel_size: int,
+                 stride: int = 1, padding: int = 0, seed: int = 0):
+        super().__init__()
+        if kernel_size < 1:
+            raise NNError(code="E0616", message="Conv1D: kernel_size must be >= 1",
+                          stage="nn")
+        if stride < 1 or padding < 0:
+            raise NNError(code="E0616", message="Conv1D: stride >= 1 and padding >= 0 required",
+                          stage="nn")
+        rng = np.random.default_rng(seed)
+        fan_in = in_channels * kernel_size
+        bound = 1.0 / math.sqrt(fan_in)
+        w = rng.uniform(-bound, bound, size=(out_channels, in_channels, kernel_size)).astype(np.float32)
+        b = np.zeros(out_channels, dtype=np.float32)
+        self.weight = Tensor(w, requires_grad=True)
+        self.bias = Tensor(b, requires_grad=True)
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+
+    def forward(self, x: Tensor) -> Tensor:
+        return conv1d(x, self.weight, self.bias,
+                      stride=self.stride, padding=self.padding)
+
+    def parameters(self) -> List[Tensor]:
+        return [self.weight, self.bias]
+
+
+def _conv1d_forward(xd, wd, bd, stride, padding):
+    """Returns (out, cols, padded_shape). Input must be 3-D NCL."""
+    N, C, L = xd.shape
+    F, Cw, K = wd.shape
+    assert C == Cw
+    L_out = (L + 2 * padding - K) // stride + 1
+    xp = np.pad(xd, ((0, 0), (0, 0), (padding, padding)))
+    cols = np.zeros((N, C * K, L_out), dtype=xd.dtype)
+    for k in range(K):
+        patch = xp[:, :, k:k + stride * L_out:stride]
+        for c in range(C):
+            cols[:, c * K + k, :] = patch[:, c]
+    w2d = wd.reshape(F, C * K)
+    out = np.einsum("fc,ncl->nfl", w2d, cols)
+    if bd is not None:
+        out = out + bd.reshape(1, F, 1)
+    return out, cols, xp.shape
+
+
+def _conv1d_backward(g, cols, wd, xp_shape, C, L, stride, padding):
+    """g: (N, F, L_out). Returns (dx, dw, db) matching parents."""
+    N, F, L_out = g.shape
+    K = wd.shape[2]
+    w2d = wd.reshape(F, C * K)
+    dw2d = np.einsum("nfl,ncl->fc", g, cols)
+    dw = dw2d.reshape(wd.shape)
+    db = g.sum(axis=(0, 2))
+    dcols = np.einsum("fc,nfl->ncl", w2d, g)
+    dxp = np.zeros(xp_shape, dtype=g.dtype)
+    for k in range(K):
+        for c in range(C):
+            patch_grad = dcols[:, c * K + k, :]
+            for l_out_idx in range(L_out):
+                dxp[:, c, k + l_out_idx * stride] += patch_grad[:, l_out_idx]
+    dx = dxp[:, :, padding:padding + L]
+    return dx, dw, db
+
+
+def conv1d(x: Tensor, weight: Tensor, bias: Optional[Tensor] = None,
+           stride: int = 1, padding: int = 0) -> Tensor:
+    """Functional 1-D cross-correlation, autograd tape-aware."""
+    if x.ndim != 3:
+        raise NNError(code="E0616", message=f"conv1d: expected 3-D NCL input, got shape {x.shape}",
+                      stage="nn")
+    if weight.ndim != 3:
+        raise NNError(code="E0616", message=f"conv1d: expected 3-D (F, C, K) weight, got {weight.shape}",
+                      stage="nn")
+    if x.shape[1] != weight.shape[1]:
+        raise NNError(code="E0616",
+                      message=f"conv1d: channel mismatch: input C={x.shape[1]} vs weight C={weight.shape[1]}",
+                      stage="nn")
+    N, C, L = x.data.shape
+    K = weight.data.shape[2]
+    if (L + 2 * padding - K) < 0:
+        raise NNError(code="E0616",
+                      message=f"conv1d: kernel size {K} (padding {padding}) exceeds input length {L}",
+                      stage="nn")
+    out, cols, xp_shape = _conv1d_forward(x.data, weight.data,
+                                          bias.data if bias is not None else None,
+                                          stride, padding)
+    parents = [x, weight] + ([bias] if bias is not None else [])
+
+    def backward_fn(g):
+        dx, dw, db = _conv1d_backward(g, cols, weight.data, xp_shape, C, L,
+                                      stride, padding)
+        return (dx, dw, db) if bias is not None else (dx, dw)
+
+    return x._make_result(out, parents, backward_fn, "conv1d")
 
 
 class Conv2D(Module):

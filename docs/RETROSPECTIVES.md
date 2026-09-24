@@ -660,3 +660,37 @@ the optimizer work began only after the IR itself became executable.)
     example 12.
 
 
+---
+
+# Entry 12 — v0.11.0, Milestone 7 expansion (Conv1D; DD-24)
+
+1. **What works?** Conv1D module (`timet.nn.Conv1D`) and functional op
+   (`timet.nn.conv1d`) over 3-D NCL inputs with stride and zero-padding;
+   forward matches naive 4-loop reference; input/weight/bias gradients
+   verified with finite differences; parameter checkpoint roundtrip; training
+   a sequence classifier from Time-T code (`examples/13_conv1d_classifier.tt`),
+   verified byte-identically across AST, IR-O0, and IR-O1 execution engines.
+2. **What does not work / doesn't exist?** Conv3D, grouped 1D convolutions,
+   dilated 1D convolutions, transposed convolutions.
+3. **What is untested?** Sequences with length > 10,000 (O(L*K) memory expansion
+   in im2col uncharacterized at large scale).
+4. **What is slow?** Python loop in col2im backward; fine for targeted small
+   models and tests.
+5. **What consumes excessive memory?** im2col 1D buffer duplicates memory by
+   kernel size K.
+6. **What architectural debt exists?** Conv1D and Conv2D have similar im2col/col2im
+   structures that could share a unified N-D convolution kernel in a lower-level C backend.
+7. **What assumptions may be wrong?** That NCL layout is universally preferred over
+   NLC (PyTorch uses NCL, TensorFlow uses NLC); standard NCL adopted.
+8. **What should be redesigned before continuing?** When native codegen grows
+   tensor operations, convolution primitives should map directly to BLAS gemm calls.
+9. **What should NOT be implemented yet?** Winograd convolution algorithms or
+   FFT-based convolutions.
+10. **What evidence supports current claims?** `pytest -q` = 451 passing:
+    `tests/test_conv1d.py` (12 tests covering forward match, without-bias forward,
+    finite-difference gradients for input/weight/bias, determinism and shapes,
+    dimension validation errors E0616, checkpoint roundtrips, and optimization convergence),
+    plus differential execution on example 13.
+
+
+

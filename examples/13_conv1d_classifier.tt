@@ -1,0 +1,32 @@
+// Example 13: Conv1D sequence classifier trained from Time-T code.
+// Conv1D(1->2, kernel=3) + Flatten + Linear -> 2 logits, Adam.
+
+fn main() {
+    let model = nn.Sequential(
+        nn.Conv1D(1, 2, 3, seed=10),
+        nn.Flatten(),
+        nn.Linear(8, 2, seed=20)
+    )
+
+    let x = tensor([
+        [[0.1, 0.2, 0.9, 0.8, 0.1, 0.2]],
+        [[0.8, 0.9, 0.1, 0.2, 0.1, 0.1]]
+    ])
+    let y = tensor([1, 0])
+
+    let opt = optim.Adam(model.parameters(), lr=0.05)
+    var step = 0
+    while step < 40 {
+        let logits = model(x)
+        let loss = nn.cross_entropy_loss(logits, y)
+        loss.backward()
+        opt.step()
+        opt.zero_grad()
+        step = step + 1
+    }
+
+    let final_logits = model(x)
+    let preds = final_logits.argmax(axis=1)
+    print("trained Conv1D successfully")
+    print(preds)
+}

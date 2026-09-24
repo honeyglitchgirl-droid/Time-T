@@ -116,8 +116,15 @@ reproduce every claim below.
   Block with residual connections and checkpoint round-trip. Usable from
   Time-T code: `examples/12_transformer_block.tt` trains a TransformerBlock
   on all three engines (AST, IR-O0, IR-O1) with byte-identical output.
-- NOT DONE: Conv1D/Conv3D, BatchNorm,
+- EXPANDED (v0.11.0, DD-24): `Conv1D` layer + `conv1d` functional op
+  (NCL, stride + zero-padding; im2col forward with hand-written col2im
+  backward, finite-difference checked from x/weight/bias across multiple
+  stride/padding configurations). Checkpoint serialization verified.
+  Usable from Time-T code: `examples/13_conv1d_classifier.tt` trains a
+  Conv1D sequence classifier on all three engines with byte-identical output.
+- NOT DONE: Conv3D, BatchNorm,
   weight/init schemes beyond Kaiming-uniform, mixed precision.
+
 
 
 

@@ -576,7 +576,25 @@ at the repo's standard 1e-3 tolerance.
    section). Best-epoch weights remain checkpoint.py's job.
 ---
 
-## DD-23: Multi-Head Attention, GELU, and Transformer Block (Milestone 7 expansion)
+## DD-24: 1-D Convolution (Milestone 7: Conv1D)
+
+**Decisions (v0.11.0):**
+1. `Conv1D` layer and `conv1d` functional operator:
+   - Input format: 3-D NCL `(N, C_in, L)`.
+   - Weights format: 3-D `(F, C_in, K)`.
+   - Bias format: 1-D `(F,)`.
+   - Output length: `(L + 2*padding - K) // stride + 1`.
+2. Implemented with explicit 1D im2col forward and col2im backward tape
+   operations.
+3. Correctness verified by central finite-difference gradient checks
+   against input `x`, `weight`, and `bias` across multiple stride and padding
+   configurations in `tests/test_conv1d.py` with tight tolerances
+   (`rtol=1e-3, atol=1e-3`), and forward matches a 4-nested-loop naive reference.
+4. Checkpoint compatibility verified for `.ttck` binary formats.
+5. Reachable from Time-T code via `nn.Conv1D` and `nn.conv1d`.
+   Demonstrated in `examples/13_conv1d_classifier.tt` running byte-identically
+   across AST interpreter, IR-O0, and IR-O1 engines.
+
 
 **Decisions (v0.10.0):**
 1. `MultiheadAttention` (Vaswani et al. 2017) layer:

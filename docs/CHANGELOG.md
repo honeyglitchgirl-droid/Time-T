@@ -4,6 +4,19 @@ All notable changes to Time-T are recorded here. Format loosely follows
 Keep a Changelog; versioning follows master prompt §37 (targets, not
 promises).
 
+## [0.11.0] — 2026-09-24 (Milestone 7: 1-D Convolution)
+
+- **`Conv1D` and `conv1d`** (DD-24): 1-D cross-correlation over NCL sequences
+  with configurable stride and zero-padding.
+- **Autograd correctness**: Hand-written col2im backward with central
+  finite-difference gradient checks on input x, weight, and bias.
+- **Checkpoint compatibility**: Binary and JSON checkpoint round-trips verified.
+- **Time-T program reachable**: `examples/13_conv1d_classifier.tt` trains a
+  1D sequence classifier with Adam, running byte-identically on AST, IR-O0,
+  and IR-O1 engines.
+
+Suite: **451 tests** (was 437).
+
 ## [0.10.0] — 2026-09-24 (Milestone 7: Attention, GELU, and Transformer Block)
 
 - **`MultiheadAttention`** (DD-23): Multi-head scaled dot-product attention
