@@ -576,7 +576,28 @@ at the repo's standard 1e-3 tolerance.
    section). Best-epoch weights remain checkpoint.py's job.
 ---
 
-## DD-24: 1-D Convolution (Milestone 7: Conv1D)
+## DD-25: RMSNorm, Multi-dimensional CrossEntropyLoss, and TransformerLM (Milestone 7 expansion)
+
+**Decisions (v0.12.0):**
+1. `RMSNorm` (Zhang & Sennrich 2019) layer and `rms_norm` functional operator:
+   - $y = \frac{x}{\sqrt{\text{mean}(x^2, -1) + \epsilon}} \cdot \text{weight}$
+   - Finite-difference gradient checks on both input and weights.
+2. `CrossEntropyLoss` extended to multi-dimensional tensors `(*, C)` with
+   integer targets matching `(*)` (e.g. sequence generation logits `(B, S, V)`
+   with target labels `(B, S)`).
+3. `Embedding` enhanced to accept both raw Python sequences and `Tensor`
+   indices directly with automatic dtype normalization.
+4. `TransformerLM`:
+   - Complete decoder-only autoregressive language model:
+     $\text{Token Embedding} + \text{Positional Embedding} \rightarrow \text{Transformer Blocks} \rightarrow \text{Norm} \rightarrow \text{LM Head}$.
+   - Causal upper-triangular masking ensures strictly autoregressive attention.
+   - Verified by next-token sequence memorization reaching 100% accuracy.
+5. Checkpoint compatibility: fully serializable and loadable via `.ttck` and
+   JSON formats.
+6. Reachable from Time-T code via `nn.RMSNorm`, `nn.TransformerLM`, `nn.rms_norm`.
+   Demonstrated in `examples/14_transformer_lm.tt` running byte-identically
+   across AST interpreter, IR-O0, and IR-O1 engines.
+
 
 **Decisions (v0.11.0):**
 1. `Conv1D` layer and `conv1d` functional operator:

@@ -122,8 +122,17 @@ reproduce every claim below.
   stride/padding configurations). Checkpoint serialization verified.
   Usable from Time-T code: `examples/13_conv1d_classifier.tt` trains a
   Conv1D sequence classifier on all three engines with byte-identical output.
+- EXPANDED (v0.12.0, DD-25): `RMSNorm` (Root Mean Square Layer Normalization)
+  and `TransformerLM` (complete decoder-only causal language model combining
+  token embedding, learned positional embedding, transformer blocks, norm,
+  and LM head for autoregressive sequence modeling). Multi-dimensional
+  CrossEntropyLoss support `(*, C)`. Checkpoint serialization verified.
+  Usable from Time-T code: `examples/14_transformer_lm.tt` trains a
+  TransformerLM next-token predictor on all three engines (AST, IR-O0, IR-O1)
+  with byte-identical output.
 - NOT DONE: Conv3D, BatchNorm,
   weight/init schemes beyond Kaiming-uniform, mixed precision.
+
 
 
 

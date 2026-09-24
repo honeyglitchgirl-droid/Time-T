@@ -1,0 +1,2 @@
+trained TransformerLM successfully
+Tensor([[2, 3, 4, 5]])

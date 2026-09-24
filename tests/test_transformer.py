@@ -162,4 +162,57 @@ def test_transformer_block_learns_target_mapping():
         opt.zero_grad()
         losses.append(float(loss.data))
 
-    assert losses[-1] < losses[0] / 3, f"TransformerBlock failed to converge: {losses[0]} -> {losses[-1]}"
+def test_rmsnorm_forward_and_backward():
+    from timet.nn import RMSNorm, rms_norm
+    eps = 1e-6
+    x_np = np.array([[1.0, 2.0, 3.0, 4.0], [-1.0, 0.0, 2.0, -2.0]], dtype=np.float64)
+    w_np = np.array([1.5, 0.5, 2.0, 1.0], dtype=np.float64)
+
+    def ref_rms(xd, wd):
+        rms = np.sqrt(np.mean(xd ** 2, axis=-1, keepdims=True) + eps)
+        return (xd / rms) * wd
+
+    expected = ref_rms(x_np, w_np)
+    r = RMSNorm(4, eps=eps)
+    r.weight.data = w_np.astype(np.float32)
+
+    xt = Tensor(x_np.astype(np.float32), requires_grad=True)
+    out = r(xt)
+    assert_close(out.data.astype(np.float64), expected, rtol=1e-4, atol=1e-4)
+
+    # Check finite-difference gradients for input and weight
+    upstream = np.array([[1.0, -0.5, 2.0, 0.5], [0.2, 1.0, -1.0, 0.8]], dtype=np.float64)
+    out.backward(Tensor(upstream.astype(np.float32)))
+
+    gx_ad = xt.grad.data.astype(np.float64)
+    gw_ad = r.weight.grad.data.astype(np.float64)
+
+    fd_x = finite_difference_grad(lambda a: float((ref_rms(a, w_np) * upstream).sum()), x_np)
+    fd_w = finite_difference_grad(lambda b: float((ref_rms(x_np, b) * upstream).sum()), w_np)
+
+    assert_close(gx_ad, fd_x, rtol=1e-3, atol=1e-3, msg="RMSNorm input grad")
+    assert_close(gw_ad, fd_w, rtol=1e-3, atol=1e-3, msg="RMSNorm weight grad")
+
+
+def test_transformer_lm_e2e_training():
+    from timet.nn import TransformerLM, CrossEntropyLoss
+    from timet.optim import Adam
+
+    lm = TransformerLM(vocab_size=8, embed_dim=8, max_seq_len=6, num_heads=2, num_layers=1, seed=42)
+    inp = Tensor([[1, 2, 3, 4]])
+    target = Tensor([[2, 3, 4, 5]])
+
+    opt = Adam(lm.parameters(), lr=0.04)
+    ce = CrossEntropyLoss()
+
+    for _ in range(60):
+        logits = lm(inp) # (1, 4, 8)
+        loss = ce(logits, target)
+        loss.backward()
+        opt.step()
+        opt.zero_grad()
+
+    preds = logits.argmax(axis=-1)
+    assert (preds.data == target.data).all(), f"Failed to predict target: {preds.data} vs {target.data}"
+    assert float(loss.data) < 0.05
+

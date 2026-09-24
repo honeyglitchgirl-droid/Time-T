@@ -4,6 +4,20 @@ All notable changes to Time-T are recorded here. Format loosely follows
 Keep a Changelog; versioning follows master prompt §37 (targets, not
 promises).
 
+## [0.12.0] — 2026-09-24 (Milestone 7: RMSNorm, Multi-dim CrossEntropyLoss, and TransformerLM)
+
+- **`RMSNorm` and `rms_norm`** (DD-25): Root Mean Square Layer Normalization
+  (Zhang & Sennrich 2019) with finite-difference gradient checks.
+- **Multi-dimensional `CrossEntropyLoss`**: extended to arbitrary `(*, C)`
+  logits and matching targets, unblocking language model loss computation.
+- **`TransformerLM`** (DD-25): Complete decoder-only causal language model
+  architecture with causal masking, token/position embeddings, and LM head.
+- **Time-T program reachable**: `examples/14_transformer_lm.tt` trains a
+  TransformerLM next-token predictor with Adam, running byte-identically on
+  AST, IR-O0, and IR-O1 engines.
+
+Suite: **455 tests** (was 451).
+
 ## [0.11.0] — 2026-09-24 (Milestone 7: 1-D Convolution)
 
 - **`Conv1D` and `conv1d`** (DD-24): 1-D cross-correlation over NCL sequences

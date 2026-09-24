@@ -1,0 +1,26 @@
+// Example 14: Tiny Language Model (TransformerLM) autoregressive next-token prediction
+// Demonstrates token embedding, positional embedding, transformer block, norm, and language model head.
+
+fn main() {
+    let lm = nn.TransformerLM(8, 8, 6, 2, 1, 100)
+
+    let inp = tensor([[1, 2, 3, 4]])
+    let target = tensor([[2, 3, 4, 5]])
+
+    let opt = optim.Adam(lm.parameters(), lr=0.04)
+
+    var step = 0
+    while step < 40 {
+        let logits = lm(inp)
+        let loss = nn.cross_entropy_loss(logits, target)
+        loss.backward()
+        opt.step()
+        opt.zero_grad()
+        step = step + 1
+    }
+
+    let final_logits = lm(inp)
+    let preds = final_logits.argmax(axis=2)
+    print("trained TransformerLM successfully")
+    print(preds)
+}

@@ -150,10 +150,10 @@ code runs), in BOTH execution engines:
 
 - `nn` — layers/losses: `nn.Sequential`, `nn.Linear`, `nn.ReLU`,
   `nn.Sigmoid`, `nn.Tanh`, `nn.GELU`, `nn.Softmax`, `nn.Flatten`, `nn.Dropout`,
-  `nn.Conv1D`, `nn.Conv2D`, `nn.Embedding`, `nn.LayerNorm`,
-  `nn.MultiheadAttention`, `nn.TransformerBlock`;
+  `nn.Conv1D`, `nn.Conv2D`, `nn.Embedding`, `nn.LayerNorm`, `nn.RMSNorm`,
+  `nn.MultiheadAttention`, `nn.TransformerBlock`, `nn.TransformerLM`;
   `nn.mse_loss`, `nn.cross_entropy_loss`, `nn.binary_cross_entropy`,
-  `nn.gelu`, `nn.layer_norm`, `nn.conv1d`, `nn.conv2d`
+  `nn.gelu`, `nn.layer_norm`, `nn.rms_norm`, `nn.conv1d`, `nn.conv2d`
   (+ class forms `nn.MSELoss()` etc.)
 - `optim` — `optim.SGD(params, lr=...)`, `optim.Adam(params, lr=...)`
 - `train` — `train.accuracy(logits, targets)`

@@ -693,4 +693,36 @@ the optimizer work began only after the IR itself became executable.)
     plus differential execution on example 13.
 
 
+---
+
+# Entry 13 — v0.12.0, Milestone 7 expansion (RMSNorm & TransformerLM; DD-25)
+
+1. **What works?** RMSNorm (`timet.nn.RMSNorm`, `timet.nn.rms_norm`) with
+   finite-difference checked gradients; multi-dimensional `CrossEntropyLoss`
+   for sequence modeling `(*, C)`; complete autoregressive `TransformerLM`
+   with causal attention masking; end-to-end next-token prediction
+   convergence; runnable Time-T example `examples/14_transformer_lm.tt`
+   producing byte-identical output across AST, IR-O0, and IR-O1 engines.
+2. **What does not work / doesn't exist?** Generation loop with sampling
+   temperature / top-k / top-p (forward logits currently evaluated);
+   rotary position embeddings (RoPE).
+3. **What is untested?** Vocabularies > 50,000 words.
+4. **What is slow?** Quadratic causal attention computation in Python/NumPy;
+   appropriate for small language models and unit verification.
+5. **What consumes excessive memory?** Causal mask tensor and attention scores
+   stored on autograd tape during training.
+6. **What architectural debt exists?** KV caching for incremental generation
+   is not implemented yet.
+7. **What assumptions may be wrong?** Learned absolute positional embeddings
+   are used (simple and reliable, though modern LLMs increasingly use RoPE).
+8. **What should be redesigned before continuing?** RoPE and KV-caching
+   generation utilities should be introduced when building inference tooling.
+9. **What should NOT be implemented yet?** PagedAttention or quantization.
+10. **What evidence supports current claims?** `pytest -q` = 455 passing:
+    tests in `tests/test_transformer.py` (RMSNorm forward/backward,
+    TransformerLM next-token memorization test reaching 100% accuracy),
+    and differential 3-engine verification on example 14.
+
+
+
 

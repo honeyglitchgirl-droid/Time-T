@@ -391,7 +391,10 @@ class Embedding(Module):
         self.embedding_dim = embedding_dim
 
     def forward(self, indices) -> Tensor:
-        idx = np.asarray(indices, dtype=np.int64)
+        if isinstance(indices, Tensor):
+            idx = indices.data.astype(np.int64)
+        else:
+            idx = np.asarray(indices, dtype=np.int64)
         if idx.size == 0:
             raise NNError(code="E0612", message="Embedding: empty indices", stage="nn")
         if idx.min() < 0 or idx.max() >= self.num_embeddings:
@@ -408,6 +411,7 @@ class Embedding(Module):
             return (gw.astype(w.data.dtype),)
 
         return w._make_result(out, [w], backward_fn, "embedding")
+
 
     def parameters(self) -> List[Tensor]:
         return [self.weight]
@@ -455,6 +459,35 @@ class LayerNorm(Module):
         if self.elementwise_affine:
             return [self.weight, self.bias]
         return []
+
+
+class RMSNorm(Module):
+    """Root Mean Square Layer Normalization (Zhang & Sennrich 2019).
+
+    y = x / sqrt(mean(x^2, -1) + eps) * weight
+    """
+
+    def __init__(self, dim: int, eps: float = 1e-6):
+        super().__init__()
+        if dim <= 0:
+            raise NNError(code="E0614", message="RMSNorm: dim must be > 0", stage="nn")
+        self.dim = dim
+        self.eps = float(eps)
+        w = np.ones((dim,), dtype=np.float32)
+        self.weight = Tensor(w, requires_grad=True)
+
+    def forward(self, x: Tensor) -> Tensor:
+        if x.shape[-1] != self.dim:
+            raise NNError(
+                code="E0614",
+                message=f"RMSNorm: input tail dim {x.shape[-1]} != expected {self.dim}",
+                stage="nn"
+            )
+        rms = ((x * x).mean(axis=-1, keepdims=True) + self.eps).sqrt()
+        return (x / rms) * self.weight
+
+    def parameters(self) -> List[Tensor]:
+        return [self.weight]
 
 
 class MultiheadAttention(Module):
@@ -592,6 +625,54 @@ class TransformerBlock(Module):
         return [self.norm1, self.attn, self.norm2, self.mlp]
 
 
+class TransformerLM(Module):
+    """Causal Language Model (decoder-only transformer).
+
+    Embedding -> Positional Embedding -> Transformer Blocks -> Norm -> LM Head.
+    """
+
+    def __init__(self, vocab_size: int, embed_dim: int, max_seq_len: int,
+                 num_heads: int, num_layers: int = 1, seed: int = 0):
+        super().__init__()
+        self.vocab_size = vocab_size
+        self.embed_dim = embed_dim
+        self.max_seq_len = max_seq_len
+        self.tok_emb = Embedding(vocab_size, embed_dim, seed=seed)
+        self.pos_emb = Embedding(max_seq_len, embed_dim, seed=seed + 1)
+        self.blocks = [
+            TransformerBlock(embed_dim, num_heads, seed=seed + 10 + i * 10)
+            for i in range(num_layers)
+        ]
+        self.norm = LayerNorm(embed_dim)
+        self.head = Linear(embed_dim, vocab_size, seed=seed + 100)
+
+    def forward(self, token_ids: Tensor) -> Tensor:
+        B, S = token_ids.shape
+        if S > self.max_seq_len:
+            raise NNError(code="E0617",
+                          message=f"TransformerLM: sequence length {S} > max_seq_len {self.max_seq_len}",
+                          stage="nn")
+        pos = Tensor(np.arange(S, dtype=np.int64).reshape(1, S))
+        x = self.tok_emb(token_ids) + self.pos_emb(pos)
+        mask = Tensor(np.triu(np.full((S, S), -1e9, dtype=np.float32), k=1).reshape(1, 1, S, S))
+        for block in self.blocks:
+            x = block(x, mask=mask)
+        x = self.norm(x)
+        return self.head(x)
+
+    def parameters(self) -> List[Tensor]:
+        params = self.tok_emb.parameters() + self.pos_emb.parameters()
+        for b in self.blocks:
+            params.extend(b.parameters())
+        params.extend(self.norm.parameters())
+        params.extend(self.head.parameters())
+        return params
+
+    def children(self) -> List[Module]:
+        return [self.tok_emb, self.pos_emb] + self.blocks + [self.norm, self.head]
+
+
+
 class Dropout(Module):
     """Inverted dropout: scales surviving activations by 1/(1-p) at train
     time, identity at eval time. Seeded => deterministic, so tests and
@@ -640,37 +721,41 @@ class MSELoss(Module):
 
 
 class CrossEntropyLoss(Module):
-    """Mean negative log-likelihood over a batch of logits.
+    """Mean negative log-likelihood over class logits.
 
-    pred:    Tensor of shape (N, C) -- raw logits (NOT probabilities).
-    targets: length-N integer class labels (python list, NumPy array, or
-             integer Tensor).
+    pred:    Tensor of shape (N, C) or (*, C) -- raw logits (NOT probabilities).
+    targets: integer class labels matching pred.shape[:-1].
 
-    Computed as:  mean( -sum( one_hot(target) * log_softmax(logits), axis=1 ) )
+    Computed as:  mean( -sum( one_hot(target) * log_softmax(logits), axis=-1 ) )
     Gradient flows through log_softmax's verified primitive-op backward
     rules; one_hot is a constant lookup. Finite-difference checked in
     tests/test_nn.py.
     """
 
     def forward(self, pred: Tensor, targets) -> Tensor:
-        if pred.ndim != 2:
+        if pred.ndim < 2:
             raise NNError(
                 code="E0612",
-                message=f"CrossEntropyLoss: expected logits of shape (N, C), got {pred.shape}",
+                message=f"CrossEntropyLoss: expected logits of shape (*, C), got {pred.shape}",
                 stage="nn",
             )
-        n, c = pred.shape
+        c = pred.shape[-1]
         targets_t = targets if isinstance(targets, Tensor) else tensor(list(targets))
-        if targets_t.data.shape != (n,):
+        expected_target_shape = pred.shape[:-1]
+        if targets_t.data.shape != expected_target_shape:
             raise NNError(
                 code="E0613",
-                message=f"CrossEntropyLoss: expected {n} target label(s), got shape {targets_t.data.shape}",
+                message=f"CrossEntropyLoss: expected targets shape {expected_target_shape}, got {targets_t.data.shape}",
                 stage="nn",
             )
-        oh = one_hot(targets_t, c)
-        logp = pred.log_softmax(axis=1)
+        n = pred.data.size // c
+        pred_2d = pred.reshape((-1, c)) if pred.ndim != 2 else pred
+        targets_1d = targets_t.reshape((-1,)) if targets_t.ndim != 1 else targets_t
+        oh = one_hot(targets_1d, c)
+        logp = pred_2d.log_softmax(axis=1)
         per_sample = -(oh * logp).sum(axis=1)
         return per_sample.mean()
+
 
 
 class BCELoss(Module):
@@ -717,6 +802,15 @@ def gelu(x: Tensor) -> Tensor:
     c = float(math.sqrt(2.0 / math.pi))
     inner = (x + (x * x * x) * 0.044715) * c
     return (x * 0.5) * (inner.tanh() + 1.0)
+
+
+def rms_norm(x: Tensor, weight: Optional[Tensor] = None, eps: float = 1e-6) -> Tensor:
+    """Functional Root Mean Square Layer Normalization."""
+    rms = ((x * x).mean(axis=-1, keepdims=True) + eps).sqrt()
+    out = x / rms
+    if weight is not None:
+        out = out * weight
+    return out
 
 
 def layer_norm(x: Tensor, normalized_shape: Union[int, Sequence[int]],
