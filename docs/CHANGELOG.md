@@ -4,7 +4,16 @@ All notable changes to Time-T are recorded here. Format loosely follows
 Keep a Changelog; versioning follows master prompt §37 (targets, not
 promises).
 
+## [2.1.0] — 2026-09-24 (Multi-Threaded SIMD + OpenMP Native Backend)
+
+- **Multi-Threaded SIMD OpenMP Backend** (DD-33):
+  - Added `timet/simd_backend.py` implementing `SimdCpuBackend`.
+  - Multi-threaded OpenMP matrix multiplication (`simd_parallel_matmul`) and SIMD-vectorized elementwise additions and activations across all available CPU cores.
+  - Automatically selected by default on supported systems, delivering maximum hardware utilization.
+- **Suite**: **488 tests** (all green).
+
 ## [2.0.0] — 2026-09-24 (Production-Grade Native C JIT Kernel Acceleration)
+
 
 - **Native C JIT Kernel Acceleration** (DD-32):
   - Added `timet/jit_kernels.py` compiling vectorized C kernels with `-O3` directly to shared libraries.

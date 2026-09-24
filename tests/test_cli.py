@@ -55,7 +55,8 @@ def test_inspect_ir():
 def test_inspect_backend_json():
     proc = run_cli("inspect", "examples/01_hello_world.tt", "--backend", "--json")
     payload = json.loads(proc.stdout)
-    assert payload["backend"]["name"] == "cpu-numpy"
+    assert payload["backend"]["name"] in ("cpu-numpy", "cpu-simd-openmp")
+
 
 
 def test_cli_package_and_doctor_and_profile():

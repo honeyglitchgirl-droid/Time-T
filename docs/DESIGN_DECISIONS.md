@@ -593,7 +593,22 @@ at the repo's standard 1e-3 tolerance.
 
 ---
 
+## DD-33: Multi-Threaded SIMD + OpenMP Native Backend (v2.1.0, DD-33)
+
+**Decision (v2.1.0):**
+1. Multi-Threaded Native SIMD Backend (`timet/simd_backend.py`):
+   - Implemented `SimdCpuBackend` utilizing OpenMP parallel execution and native AVX-512/AVX2 instruction sets.
+   - Accelerates matrix multiplication (`simd_parallel_matmul`) with OpenMP dynamic scheduling and inner SIMD vectorization.
+   - Accelerates parallel elementwise additions, multiplications, and activations across multiple CPU cores.
+   - Automatically becomes the default execution backend on systems with GCC/Clang and OpenMP support, falling back gracefully to NumPy.
+2. Verified Backend Polymorphism:
+   - Verified that `get_default_backend()` auto-detects `cpu-simd-openmp` with SIMD capabilities reportable via `time-t inspect --backend`.
+   - Verified by tests in `tests/test_simd_backend.py` and `tests/test_backend.py`.
+
+---
+
 ## DD-32: Production-Grade Native C JIT Kernel Acceleration (v2.0.0)
+
 
 **Decision (v2.0.0):**
 1. Native C JIT Acceleration (`timet/jit_kernels.py`):

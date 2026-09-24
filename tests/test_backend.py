@@ -4,7 +4,8 @@ from timet.backend import NumpyCpuBackend, get_default_backend, Backend, Backend
 
 def test_default_backend_is_numpy_cpu():
     b = get_default_backend()
-    assert b.name == "cpu-numpy"
+    assert b.name in ("cpu-numpy", "cpu-simd-openmp")
+
 
 
 def test_capabilities_reports_no_gpu():
@@ -19,7 +20,8 @@ def test_capabilities_to_json_serializable():
     import json
     caps = get_default_backend().capabilities()
     s = json.dumps(caps.to_json())
-    assert "cpu-numpy" in s
+    assert ("cpu-numpy" in s or "cpu-simd-openmp" in s)
+
 
 
 def test_matmul_correctness():

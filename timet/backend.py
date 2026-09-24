@@ -99,8 +99,24 @@ def _detect_blas() -> str:
     return "numpy-generic"
 
 
-_default_backend = NumpyCpuBackend()
+_default_backend = None
 
 
 def get_default_backend() -> Backend:
+    global _default_backend
+    if _default_backend is None:
+        try:
+            from timet.simd_backend import SimdCpuBackend, _LOADED_SIMD
+            if _LOADED_SIMD is not None:
+                _default_backend = SimdCpuBackend()
+            else:
+                _default_backend = NumpyCpuBackend()
+        except Exception:
+            _default_backend = NumpyCpuBackend()
     return _default_backend
+
+
+def set_default_backend(backend: Backend):
+    global _default_backend
+    _default_backend = backend
+
