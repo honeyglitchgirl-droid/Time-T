@@ -1,0 +1,235 @@
+Time-T Language Audit: Bugs, Performance, and a Roadmap to Outcompete
+24 Sept 2026 · @Gih
+Executive Summary
+Across three tested releases (v0.9.0 → v0.10.0 → v1.1.0), Time-T has shown a consistent pattern: rapid, honest feature growth paired with untouched core-runtime bugs. Every version has shipped exactly the number of passing tests and byte-exact examples its own changelog claims — that discipline is real and rare. But the same two crash bugs (unhandled division/modulo by zero, unhandled deep recursion) have survived four milestones and a jump to "1.0" without a single line of interpreter.py addressing them, and the README's own "not yet implemented" section has started contradicting the README's own "what exists" section one paragraph above it.
+The language's actual strength is narrow and real: for tensor/ML training code, its performance is within 2–5x of hand-written NumPy and matches NumPy outright on raw matmul, because it delegates to NumPy/BLAS. Outside tensor-shaped code — plain loops, control flow, recursion — it is currently 100x+ slower than Python and will crash instead of erroring on ordinary arithmetic mistakes. This document catalogs what's broken, what's genuinely good, and what it would take to make Time-T not just usable but competitive against Python+NumPy, PyTorch/JAX, Julia, and Mojo.
+
+Version Timeline Tested
+Version
+Date
+Headline change
+Tests
+Examples
+interpreter.py touched?
+v0.9.0
+—
+Baseline: lexer/parser/typechecker, dual-engine (AST + IR) execution, Tensor+autodiff, nn/optim/train libraries, native build via C
+414
+7
+—
+v0.10.0
+2026-09-24
+Milestone 7: LayerNorm, GELU, MultiheadAttention, TransformerBlock
+437
+9 (README undercounted; 12 actually present)
+No
+v1.0.0
+2026-09-24
+Milestone 10/12: ARM64/mobile INT8 quantization, .ttm mobile packaging, all CLI stubs (profile/export/package/doctor) implemented for real
+468
+15
+No
+v1.1.0
+2026-09-24
+User-defined structs (struct Name { field: Type }), field access with E0202/E0211 diagnostics
+474
+16
+Yes — only to add StructInstance, not to fix known bugs
+Every single test-count and example-count claim was independently verified and matched exactly (474/474, 468/468, 437/437, 414/414). This is the project's strongest asset: it has never once overstated its own test results across four releases. The one factual slip found was the v0.10.0 README undercounting its own example folder (said 9, shipped 12) — since corrected in later versions.
+Open Bugs and Drawbacks
+1. Division and modulo by zero crash with a raw Python traceback (unfixed across all 4 versions)
+5 / 0, 5.0 / 0.0, and 5 % 0 all raise an unhandled ZeroDivisionError straight out of timet/interpreter.py's _eval_binop (return left / right / return left % right, no zero check). The user sees a full Python stack trace instead of one of the project's own E0xxx diagnostics. This is the single most damaging finding: it directly contradicts the project's own stated philosophy ("nothing claimed unless backed by a passing test") — there is simply no test for this path, in any of the 474 tests.
+2. Deep recursion crashes with a raw RecursionError
+A 100,000-deep recursive call overflows Python's own call stack and surfaces an unhandled traceback rather than a Time-T stack-overflow diagnostic or a documented recursion-depth limit.
+3. Interpreter and IR executor are 100x+ slower than Python on non-tensor code
+A 10M-iteration scalar while loop took 42–51 seconds under the interpreter/IR engines vs. 0.41s in plain Python and 0.009–0.02s in C. This only stops mattering once a loop body is dominated by tensor ops (see Performance section) — any data preprocessing, custom control-flow-heavy logic, or non-vectorized code written in Time-T will be extremely slow.
+4. REPL only accepts bare expressions
+let x = 40 fails to parse in the REPL even though it's valid at file scope — meaningfully limits interactive exploration, a normal expectation for a language with a repl subcommand.
+5. README's roadmap section is now self-contradicting (regression, first seen in v1.1.0)
+The "What does NOT exist yet" list still names structs, mobile/ARM64 backends, and attention as unimplemented — all three of which the "What exists today" section (correctly, and one paragraph earlier) says are done. This is the first documentation error in this project that isn't just incomplete or lagging — it's two sections of the same file actively disagreeing.
+
+6. Native build (time-t build) only covers a narrow, unstated-in-detail subset
+It transpiles a "strict, byte-verified subset" to C — confirmed working for simple arithmetic/loop programs, but there's no user-facing list of exactly which language/tensor features are excluded from that subset, so failures there will likely surprise users rather than being self-explanatory.
+Performance Findings
+Scalar loop, 10M iterations (s = s + (i % 7))
+
+Engine
+Time
+vs. Python
+C (-O2)
+0.009 s
+46x faster
+Node.js
+0.039 s
+11x faster
+Time-T native build (→ C)
+0.009 s
+ties C
+Time-T interpreter
+48.3 s
+117x slower
+Time-T IR executor (-O1)
+51.0 s
+123x slower (optimizer didn't help — no constant-foldable structure)
+
+Matrix multiply, 256×256 float32
+Engine
+Time
+Pure Python triple loop
+445.7 ms
+C, naive triple loop (-O2)
+1.74 ms
+NumPy (BLAS)
+0.376 ms
+Time-T Tensor
+0.444 ms — matches NumPy, beats naive C
+Real ML training loops (the actual target use case)
+Tiny MLP (2→16→2, batch=4), 5000 Adam steps:
+
+Path
+µs/step
+vs. raw NumPy
+Raw NumPy, hand-written forward/backward/Adam
+52.4
+baseline
+Time-T autograd engine (Python-level)
+280.1
+5.3x slower
+Full .tt interpreter (parse + run)
+308.8
+5.9x slower
+Larger MLP (128→512→10, batch=512), 200 Adam steps — compute-bound:
+Path
+µs/step
+vs. raw NumPy
+Raw NumPy manual
+2165
+baseline
+Time-T autograd engine
+4038
+1.9x slower
+Key insight: only ~29 µs of the 308 µs/step tiny-MLP cost is the language interpreter itself; the rest is autodiff graph bookkeeping — normal for any from-scratch autodiff system (comparable to early PyTorch eager-mode overhead vs. raw NumPy). As batch size grows, matmul cost dominates and the framework tax shrinks toward 2x. The 100x interpreter penalty found in scalar loops is real but doesn't leak into tensor-shaped ML code — it would only bite on non-vectorized preprocessing or control-flow-heavy custom logic.
+
+(let/var/blocks), not just bare expressions — trivial relative to the parser work already done. 6. Add a fuzz-testing category specifically targeting runtime exceptions (div/mod by zero, overflow, stack depth, empty-tensor ops, NaN/Inf propagation) — the project already has a fuzz test file (test_fuzz.py); extend its generator to include these operators instead of only well-formed programs. 7. Publish the exact "strict, byte-verified subset" the build command supports as a checklist or a time-t build --check dry-run, so users learn the boundary before hitting it.
+Upgradability Roadmap
+Near-term (biggest ROI per engineering hour):
+• Replace the tree-walking interpreter with a real bytecode VM (register- or stack-based). This alone would likely close most of the 100x gap against Python for non-tensor code, independent of any JIT work.
+• Cache/compile hot loop bodies detected at IR level — even a simple "loop with no external calls → compile to native and re-enter" tier (a lightweight JIT trigger) would let general-purpose code approach the native-build speed without requiring the programmer to invoke build explicitly.
+• Extend the -O1 optimizer with loop-invariant code motion and strength reduction — currently it doesn't help data-dependent loops at all (confirmed: -O1 was slower than -O0 on the scalar benchmark, within noise, but not faster).
+Mid-term:
+• A real GPU backend (CUDA/ROCm via a NumPy-compatible array library, or a custom kernel layer) — this is the single biggest gap versus PyTorch/JAX for anything beyond toy models, and the README already flags it as unbuilt.
+• Static shape typing for tensors (shapes are currently runtime-checked only) — would catch a large class of ML bugs at check time instead of at first run.
+• A real module/import system — the current "modules" example is closer to file-splitting than a namespaced package system.
+• Generics/traits — needed for a reusable layer/optimizer API that isn't hand-duplicated per type.
+Long-term, differentiating bets:
+• A true tracing or graph-mode JIT (XLA/Triton-style) that can fuse multiple tensor ops into single kernels — this is where JAX/Mojo pull ahead of eager NumPy-backed systems, and where Time-T's typed IR (already inspectable and JSON-serializable) is a genuine head start most young languages don't have.
+• Distributed/multi-GPU training primitives.
+• A package manager and ONNX import/export, both already named as roadmap items but not yet started.
+Comparison vs. Alternatives
+
+
+Time-T (v1.1.0)
+Python + NumPy
+PyTorch / JAX
+Julia
+Mojo
+Tensor op speed
+Matches NumPy (delegates to it)
+Baseline (BLAS)
+Matches/beats NumPy, + GPU
+Matches/beats NumPy
+Matches/beats NumPy, + GPU
+Non-tensor loop speed
+~100x slower than Python
+Baseline
+Same as Python (still CPython)
+Near-C (JIT)
+Near-C (MLIR JIT)
+Autodiff overhead vs. raw math
+2–5x
+N/A (manual)
+Comparable (1.5–3x eager)
+Low (Zygote/Enzyme)
+Comparable
+GPU support
+None
+Via CuPy/etc, not native
+Yes, first-class
+Yes (CUDA.jl)
+Yes, first-class
+Ahead-of-time native compile
+Yes, for a narrow subset (via C)
+No
+No
+Yes
+Yes
+Static typing
+Yes, with runtime-checked tensor shapes
+No (optional hints only)
+No (Python typing only)
+Yes, optional
+Yes, strong
+Structs / user types
+Yes (new in v1.1.0)
+Via classes
+Via classes
+Yes
+Yes
+Ecosystem / library maturity
+Minimal (single repo)
+Enormous
+Enormous
+Large, scientific-computing focus
+Very early
+Verification rigor (own test suite)
+Exceptional — 3-engine differential testing, byte-exact examples
+N/A (language, not a project)
+Mature, industry-scale test suites
+Mature
+Early but disciplined
+Error handling on invalid ops
+Inconsistent — great for type/shape errors, crashes raw on div-by-zero/recursion
+Consistent (raises ZeroDivisionError cleanly, no crash)
+Consistent
+Consistent
+Consistent
+
+Time-T's honest position: it is not yet competitive with any of these alternatives as a general-purpose or production ML tool. Its genuine edge is verification discipline and its typed, inspectable IR — an architectural head start that none of Python, Julia, or early Mojo had at an equivalent stage.
+What Would Make Time-T More Powerful Than the Alternatives
+Copying PyTorch/JAX feature-for-feature just makes Time-T a slower, smaller version of them. The more interesting path is to lean into what a from-scratch language can do that a Python-hosted framework structurally can't:
+1. Make the typed, inspectable IR a first-class debugging surface. time-t inspect --ir already exists — extend it into a step-through IR debugger that shows tensor shapes, gradient flow, and the exact fused-kernel plan before execution. PyTorch/JAX users currently debug graphs through print-statements and external profilers; a built-in, native IR inspector for training graphs is a genuine differentiator, not a catch-up feature.
+2. Ship compile-time shape checking as the default, not an opt-in. Shape errors are the single most common class of ML bugs and currently only surface at runtime here (same as PyTorch/NumPy). Since the language already has a real typechecker, extending it to track tensor shapes statically (at least for static-shape cases) would be something none of the mainstream frameworks offer out of the box.
+3. Make the native-build path the default deployment story, not a side feature. No mainstream ML framework can hand you a single dependency-free native binary for a trained model today (ONNX/TorchScript still need a runtime). Time-T already compiles to C — investing here (widening the "strict subset" to cover full inference graphs, not just simple programs) would make it uniquely good at exactly the mobile/edge deployment problem its own mobile.py/quantization work already gestures at.
+4. Turn the 3-engine differential testing into a user-facing guarantee, not just an internal test. Offer time-t verify that runs any user's program through all three engines and certifies bit-identical results — a trust feature no other ML framework markets, and one that plays directly to Time-T's actual strength (verification discipline) rather than to a strength it doesn't have (raw performance).
+5. Close the interpreter-speed gap so the language is viable for the glue code around the tensors, not just the tensors themselves — real ML work is disproportionately data loading, augmentation, and control logic, and today all of that runs 100x slower than Python in Time-T. Fixing this (via the bytecode VM in the roadmap above) is what would let Time-T be used end-to-end rather than only for the innermost training loop.
+The honest framing: Time-T's most defensible moat is trust and inspectability (verified execution, typed IR, honest scoping), not speed. Doubling down there — rather than chasing PyTorch on GPU throughput, which is a multi-year, multi-team problem — is the more winnable fight.
+Final Scorecard
+Category
+Score /10
+Basis
+Honesty of claims vs. reality
+8
+Never wrong on test/example counts across 4 releases; one self-contradicting doc section found in v1.1.0
+Test rigor / engineering discipline
+9
+3-engine differential testing + byte-exact examples, sustained across every release
+Runtime robustness (crash resistance)
+4
+Two reproducible unhandled-exception crashes, unfixed across 4 versions
+Tensor/ML performance
+8
+Matches NumPy/BLAS on tensor ops; autodiff overhead in a normal 2–5x range
+General-purpose performance
+2
+100x+ slower than Python on ordinary loops/control flow
+Feature velocity
+9
+Structs, transformers, quantization, and export interop all shipped in rapid, working succession
+Competitiveness vs. mainstream ML frameworks today
+3
+No GPU backend, tiny ecosystem, general-purpose code is slow
+Long-term potential
+7
+Typed inspectable IR + verification culture are a real architectural head start if invested in
+
+Recommendation: worth continued investment as a research/learning project or a future edge-deployment niche tool, not yet suitable for anything beyond experimentation or teaching. The single highest-leverage next step is fixing the two crash bugs — not because they're hard, but because leaving basic arithmetic unsafe for four releases undermines the credibility that the project's excellent test discipline has otherwise earned.
