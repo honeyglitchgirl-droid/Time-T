@@ -2,9 +2,9 @@
 
 - **Release Archive**: `time-t-2.1.0.tar.gz`
 - **Version**: `2.1.0`
-- **Archive Size**: `220026` bytes
-- **SHA-256 Checksum**: `3ed0f4e29ad7d6855621af58740f1d55ee7a5bb1b32ac958db60e26b8262d2eb`
-- **Build Timestamp**: 2026-09-24T12:40:00Z
+- **Archive Size**: `228452` bytes
+- **SHA-256 Checksum**: `84106341dcffcc42c832694bdec3b1a112cd1a8674414a123b1a863365404fe0`
+- **Build Timestamp**: 2026-09-24T12:50:00Z
 - **Target Git Branch**: `arena/01a0d0a9-time-t`
 
 ## Archive Verification Command
@@ -15,12 +15,13 @@ sha256sum time-t-2.1.0.tar.gz
 
 Expected output:
 ```text
-3ed0f4e29ad7d6855621af58740f1d55ee7a5bb1b32ac958db60e26b8262d2eb  time-t-2.1.0.tar.gz
+84106341dcffcc42c832694bdec3b1a112cd1a8674414a123b1a863365404fe0  time-t-2.1.0.tar.gz
 ```
 
 ## Archive Contents
 - Core compiler & runtime (`timet/`)
 - CLI launcher executable with 0755 permissions (`bin/time-t`)
+- Standard build system (`setup.py`, `pyproject.toml`)
 - 16 runnable examples (`examples/`)
 - 38 test suites with 500 unit & differential tests (`tests/`)
 - Documentation specifications & binding design decisions (`docs/`)
@@ -29,3 +30,4 @@ Expected output:
 - Security & threat model assessments (`SECURITY.md`, `THREAT_MODEL.md`)
 - Production readiness candidate declaration (`PRODUCTION_READINESS.md`)
 - Clean install verification report (`CLEAN_INSTALL_REPORT.md`)
+- Total independent audit resolution ledger (`Time-T-v2.1.0-TOTAL-INDEPENDENT-AUDIT.md`)

@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "timet"
+version = "2.1.0"
+description = "A typed AI/ML programming language and high-performance numerical runtime"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "numpy>=1.24",
+]
+
+[project.scripts]
+time-t = "timet.cli:main"
