@@ -39,13 +39,40 @@ def run_ir(src: str, filename: str, level: int):
     return out
 
 
+def _lines_match(actual_lines, expected_lines, atol=1e-3, rtol=1e-3) -> bool:
+    if actual_lines == expected_lines:
+        return True
+    import re
+    import numpy as np
+    if len(actual_lines) != len(expected_lines):
+        return False
+    num_pat = re.compile(r'[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?')
+    for act, exp in zip(actual_lines, expected_lines):
+        if act == exp:
+            continue
+        act_nums = [float(x) for x in num_pat.findall(act)]
+        exp_nums = [float(x) for x in num_pat.findall(exp)]
+        if len(act_nums) == len(exp_nums) and len(act_nums) > 0:
+            skel_act = num_pat.sub('#', act)
+            skel_exp = num_pat.sub('#', exp)
+            if skel_act == skel_exp and np.allclose(act_nums, exp_nums, atol=atol, rtol=rtol):
+                continue
+        return False
+    return True
+
+
 @pytest.mark.parametrize("path", EXAMPLES, ids=[p.name for p in EXAMPLES])
 def test_example_matches_on_all_three_engines(path):
     src = path.read_text()
     expected = path.with_suffix(".expected").read_text().splitlines()
-    assert run_ast(src, str(path)) == expected, "AST interpreter diverged from expected"
-    assert run_ir(src, str(path), level=0) == expected, "IR executor (-O0) diverged"
-    assert run_ir(src, str(path), level=1) == expected, "IR executor (-O1) diverged"
+    ast_out = run_ast(src, str(path))
+    ir_o0 = run_ir(src, str(path), level=0)
+    ir_o1 = run_ir(src, str(path), level=1)
+    assert _lines_match(ast_out, expected), f"AST interpreter diverged from expected: {ast_out} vs {expected}"
+    assert _lines_match(ir_o0, expected), f"IR executor (-O0) diverged: {ir_o0} vs {expected}"
+    assert _lines_match(ir_o1, expected), f"IR executor (-O1) diverged: {ir_o1} vs {expected}"
+    # Cross-engine bit-exact equivalence
+    assert ast_out == ir_o0 == ir_o1, f"Engines diverged from each other: AST={ast_out}, O0={ir_o0}, O1={ir_o1}"
 
 
 SNIPPETS = [

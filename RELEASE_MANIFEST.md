@@ -2,9 +2,9 @@
 
 - **Release Archive**: `time-t-2.1.0.tar.gz`
 - **Version**: `2.1.0`
-- **Archive Size**: `228452` bytes
-- **SHA-256 Checksum**: `84106341dcffcc42c832694bdec3b1a112cd1a8674414a123b1a863365404fe0`
-- **Build Timestamp**: 2026-09-24T12:50:00Z
+- **Archive Size**: `228976` bytes
+- **SHA-256 Checksum**: `ec8c587c9cd1b5e70dd3e70ec05879c8b27854057841b705631bbfa748b3970c`
+- **Build Timestamp**: 2026-09-24T13:00:00Z
 - **Target Git Branch**: `arena/01a0d0a9-time-t`
 
 ## Archive Verification Command
@@ -15,7 +15,7 @@ sha256sum time-t-2.1.0.tar.gz
 
 Expected output:
 ```text
-84106341dcffcc42c832694bdec3b1a112cd1a8674414a123b1a863365404fe0  time-t-2.1.0.tar.gz
+ec8c587c9cd1b5e70dd3e70ec05879c8b27854057841b705631bbfa748b3970c  time-t-2.1.0.tar.gz
 ```
 
 ## Archive Contents
