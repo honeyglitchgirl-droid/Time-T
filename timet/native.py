@@ -48,7 +48,7 @@ CC_SEARCH_ORDER = ("gcc", "cc", "clang")
 
 class NativeError(Diagnostic):
     def __init__(self, message: str, span=None, note: str = None):
-        super().__init__(severity="error", code="E0900", message=message,
+        super().__init__(severity="error", code="E0950", message=message,
                          span=span, stage="native", note=note)
 
 
@@ -127,6 +127,11 @@ class _Emitter:
             return self._emit_binop(e)
         if isinstance(e, A.Call):
             return self._emit_call(e)
+        if isinstance(e, A.IfExpr):
+            cond_str = self.emit_expr(e.cond)
+            then_expr = self._emit_block_as_expr(e.then_branch)
+            else_expr = self._emit_block_as_expr(e.else_branch) if e.else_branch else "0"
+            return f"(({cond_str}) ? ({then_expr}) : ({else_expr}))"
         self._reject(e, f"expression kind {type(e).__name__}")
 
     def _emit_binop(self, e: A.BinOp) -> str:
@@ -157,11 +162,15 @@ class _Emitter:
                     "(literals, assignment, and print only)",
                     span=_span(e))
             return f"(({a}) {op} ({b}))"
-        if op in ("==", "!=", "<", "<=", ">", ">="):
+        if op in ("==", "!="):
             if isinstance(lt, TString) or isinstance(rt, TString):
-                raise NativeError(
-                    "native: string comparisons are not supported in v1",
-                    span=_span(e))
+                eq_call = f"(strcmp(({a}), ({b})) == 0)"
+                return eq_call if op == "==" else f"(!{eq_call})"
+            return f"(({a}) {op} ({b}))"
+        if op in ("<", "<=", ">", ">="):
+            if isinstance(lt, TString) or isinstance(rt, TString):
+                cmp_call = f"strcmp(({a}), ({b}))"
+                return f"({cmp_call} {op} 0)"
             return f"(({a}) {op} ({b}))"
         self._reject(e, f"operator '{op}'")
 
@@ -187,6 +196,22 @@ class _Emitter:
                 span=_span(e))
         args = ", ".join(self.emit_expr(a) for a in e.args)
         return f"{self._mangle(name)}({args})"
+
+    def _emit_block_as_expr(self, b: A.Block) -> str:
+        if not b.statements:
+            return "0"
+        if len(b.statements) == 1 and isinstance(b.statements[0], A.ExprStmt):
+            return self.emit_expr(b.statements[0].expr)
+        inner = []
+        for s in b.statements[:-1]:
+            self.emit_stmt(s, inner)
+        last = b.statements[-1]
+        if isinstance(last, A.ExprStmt):
+            inner.append(f"{self.emit_expr(last.expr)};")
+        else:
+            self.emit_stmt(last, inner)
+        stmts_joined = " ".join(inner)
+        return f"({{ {stmts_joined} }})"
 
     # ---------- statements ----------
     def emit_stmt(self, s: A.Stmt, out: List[str]):

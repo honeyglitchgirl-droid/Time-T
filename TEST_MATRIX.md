@@ -2,8 +2,8 @@
 
 - **Release Target**: Time-T v2.1.0
 - **Total Test Suites**: 37 test files
-- **Total Collected Tests**: 493 tests
-- **Total Passed**: 493 tests (100% pass rate)
+- **Total Collected Tests**: 497 tests
+- **Total Passed**: 497 tests (100% pass rate)
 - **Total Failed**: 0
 - **Total Skipped**: 0
 - **Execution Duration**: 11.35 seconds
@@ -52,4 +52,4 @@
 | `tests/test_embedding.py` | Embedding layer forward/backward gradient checks | 6 | **PASS** |
 | `tests/test_layernorm.py` | LayerNorm & RMSNorm forward/backward gradient checks | 8 | **PASS** |
 | `tests/test_fuzz.py` | Fuzz testing and edge-case syntax/numeric stress | 6 | **PASS** |
-| **TOTAL** | **37 Test Suites** | **493** | **100% PASS** |
+| **TOTAL** | **37 Test Suites** | **497** | **100% PASS** |

@@ -193,3 +193,25 @@ def test_one_hot_rejects_out_of_range_and_nonpositive_classes():
         one_hot([-1], 3)
     with pytest.raises(TensorError):
         one_hot([0], 0)
+
+
+def test_tensor_reshape_args_and_convenience_methods():
+    a = tensor([[1.0, -2.0], [3.0, -4.0]], requires_grad=True)
+    # varargs reshape
+    r1 = a.reshape(4)
+    assert r1.shape == (4,)
+    r2 = a.reshape(-1)
+    assert r2.shape == (4,)
+    r3 = a.reshape(2, 2)
+    assert r3.shape == (2, 2)
+
+    # abs with backward
+    y = a.abs().sum()
+    y.backward()
+    np.testing.assert_allclose(a.grad.data, np.array([[1.0, -1.0], [1.0, -1.0]]))
+
+    # flatten, squeeze, unsqueeze
+    b = tensor([[[1.0, 2.0], [3.0, 4.0]]]) # (1, 2, 2)
+    assert b.flatten().shape == (4,)
+    assert b.squeeze(0).shape == (2, 2)
+    assert b.squeeze(0).unsqueeze(1).shape == (2, 1, 2)

@@ -412,8 +412,13 @@ class Tensor:
 
     # ---------------- shape ops ----------------
 
-    def reshape(self, shape: Sequence[int]) -> "Tensor":
-        target = tuple(shape)
+    def reshape(self, *shape: Union[Sequence[int], int]) -> "Tensor":
+        if len(shape) == 1 and isinstance(shape[0], (tuple, list)):
+            target = tuple(shape[0])
+        elif len(shape) == 1 and isinstance(shape[0], int):
+            target = (shape[0],)
+        else:
+            target = tuple(shape)
         try:
             result = self.data.reshape(target)
         except ValueError as e:
@@ -431,6 +436,36 @@ class Tensor:
             return (np.asarray(g).reshape(in_shape),)
 
         return self._make_result(result, [self], backward_fn, "reshape")
+
+    def flatten(self, start_dim: int = 0, end_dim: int = -1) -> "Tensor":
+        shape = list(self.shape)
+        if end_dim < 0:
+            end_dim = len(shape) + end_dim
+        if start_dim < 0:
+            start_dim = len(shape) + start_dim
+        new_shape = shape[:start_dim] + [int(np.prod(shape[start_dim : end_dim + 1]))] + shape[end_dim + 1:]
+        return self.reshape(tuple(new_shape))
+
+    def squeeze(self, axis: Optional[Union[int, Sequence[int]]] = None) -> "Tensor":
+        result = np.squeeze(self.data, axis=axis)
+        in_shape = self.shape
+
+        def backward_fn(g):
+            return (np.asarray(g).reshape(in_shape),)
+
+        return self._make_result(result, [self], backward_fn, "squeeze")
+
+    def unsqueeze(self, dim: int) -> "Tensor":
+        result = np.expand_dims(self.data, axis=dim)
+        in_shape = self.shape
+
+        def backward_fn(g):
+            return (np.asarray(g).reshape(in_shape),)
+
+        return self._make_result(result, [self], backward_fn, "unsqueeze")
+
+    def abs(self) -> "Tensor":
+        return self._unop(np.abs, lambda g, x, y: g * np.sign(x), "abs")
 
     def transpose(self, axes: Optional[Sequence[int]] = None) -> "Tensor":
         result = np.transpose(self.data, axes)
@@ -478,15 +513,21 @@ class Tensor:
         return Tensor(self.data < other_t.data, dtype="bool")
 
 
-def tensor(data, dtype: Optional[str] = None, grad: bool = False) -> Tensor:
+def tensor(data, dtype: Optional[str] = None, grad: bool = False, requires_grad: Optional[bool] = None) -> Tensor:
+    if requires_grad is not None:
+        grad = requires_grad
     return Tensor(data, dtype=dtype, requires_grad=grad)
 
 
-def zeros(shape: Sequence[int], dtype: str = "f32", grad: bool = False) -> Tensor:
+def zeros(shape: Sequence[int], dtype: str = "f32", grad: bool = False, requires_grad: Optional[bool] = None) -> Tensor:
+    if requires_grad is not None:
+        grad = requires_grad
     return Tensor(np.zeros(tuple(shape)), dtype=dtype, requires_grad=grad)
 
 
-def ones(shape: Sequence[int], dtype: str = "f32", grad: bool = False) -> Tensor:
+def ones(shape: Sequence[int], dtype: str = "f32", grad: bool = False, requires_grad: Optional[bool] = None) -> Tensor:
+    if requires_grad is not None:
+        grad = requires_grad
     return Tensor(np.ones(tuple(shape)), dtype=dtype, requires_grad=grad)
 
 

@@ -182,3 +182,30 @@ def test_static_type_errors_still_fail_loudly_not_silently():
     from timet.diagnostics import Diagnostic
     with pytest.raises(Diagnostic):
         run_both("fn main() { print(1 && 2) }")
+
+
+def test_native_if_expression():
+    src = """
+fn main() {
+    let a = 42
+    let res = if a > 10 { 1 } else { 0 }
+    print(res)
+}
+"""
+    ast_out, nat_out = run_both(src)
+    assert ast_out == nat_out
+
+
+def test_native_string_equality_and_comparison():
+    src = """
+fn main() {
+    let s1 = "hello"
+    let s2 = "hello"
+    let s3 = "world"
+    print(s1 == s2)
+    print(s1 != s3)
+    print(s1 < s3)
+}
+"""
+    ast_out, nat_out = run_both(src)
+    assert ast_out == nat_out
