@@ -1,0 +1,54 @@
+{
+  "timestamp": "2026-09-24T00:32:42Z",
+  "platform": {
+    "processor": "",
+    "machine": "x86_64",
+    "system": "Linux",
+    "python_version": "3.11.2",
+    "numpy_version": "2.4.6"
+  },
+  "benchmarks": [
+    {
+      "name": "scalar_add_loop",
+      "seconds": 0.00862976600001275,
+      "note": "n=200000 python scalar adds"
+    },
+    {
+      "name": "tensor_vector_add",
+      "seconds": 0.00048045099993032636,
+      "note": "n=1000000 f32 elementwise add"
+    },
+    {
+      "name": "matmul_64x64",
+      "seconds": 1.598800008650869e-05,
+      "note": "~32.79 GFLOP/s (naive estimate)"
+    },
+    {
+      "name": "matmul_256x256",
+      "seconds": 0.00017486499996266502,
+      "note": "~191.89 GFLOP/s (naive estimate)"
+    },
+    {
+      "name": "tensor_sum_reduction",
+      "seconds": 0.0002329040000859095,
+      "note": "n=1000000"
+    },
+    {
+      "name": "autodiff_backward_sum_square",
+      "seconds": 0.0004889090000688157,
+      "note": "n=100000"
+    },
+    {
+      "name": "mlp_train_step_128x2_adam",
+      "seconds": 0.0005680269998720178,
+      "note": "full-batch fwd+bwd+step, 2-16-2 MLP"
+    },
+    {
+      "name": "native_loop_sum_1e6",
+      "seconds": 0.002293534000045838,
+      "note": "native binary via gcc (AST interp on same loop: 7.329s; ratio 3196x; scalar-loop workload, NOT a tensor-perf claim)",
+      "ast_interpreter_seconds": 7.329126909000024,
+      "speedup": 3195.5606103304094
+    }
+  ]
+}
