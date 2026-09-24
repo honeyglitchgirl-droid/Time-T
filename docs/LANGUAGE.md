@@ -149,9 +149,11 @@ Three names are bound in every program's global scope (before any user
 code runs), in BOTH execution engines:
 
 - `nn` — layers/losses: `nn.Sequential`, `nn.Linear`, `nn.ReLU`,
-  `nn.Sigmoid`, `nn.Tanh`, `nn.Softmax`, `nn.Flatten`, `nn.Dropout`,
-  `nn.Conv2D`, `nn.Embedding`, `nn.LayerNorm`;
-  `nn.mse_loss`, `nn.cross_entropy_loss`, `nn.binary_cross_entropy`, `nn.conv2d`
+  `nn.Sigmoid`, `nn.Tanh`, `nn.GELU`, `nn.Softmax`, `nn.Flatten`, `nn.Dropout`,
+  `nn.Conv2D`, `nn.Embedding`, `nn.LayerNorm`, `nn.MultiheadAttention`,
+  `nn.TransformerBlock`;
+  `nn.mse_loss`, `nn.cross_entropy_loss`, `nn.binary_cross_entropy`,
+  `nn.gelu`, `nn.layer_norm`, `nn.conv2d`
   (+ class forms `nn.MSELoss()` etc.)
 - `optim` — `optim.SGD(params, lr=...)`, `optim.Adam(params, lr=...)`
 - `train` — `train.accuracy(logits, targets)`

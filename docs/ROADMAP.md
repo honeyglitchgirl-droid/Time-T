@@ -108,8 +108,17 @@ reproduce every claim below.
   round-trip. Usable from Time-T code: `examples/11_layernorm_mlp.tt`
   trains an MLP with LayerNorm on all three engines with byte-identical
   output.
-- NOT DONE: Conv1D/Conv3D, BatchNorm, attention/transformer blocks,
+- EXPANDED (v0.10.0, DD-23): `MultiheadAttention`, `TransformerBlock`,
+  and `GELU` (Milestone 7: attention and transformer architecture).
+  Multi-head attention with Q/K/V projections and scaled dot-product attention
+  (supports self-attention, cross-attention, and additive attention masks),
+  GELU activation with analytic gradient checking, Pre-LN Transformer Encoder
+  Block with residual connections and checkpoint round-trip. Usable from
+  Time-T code: `examples/12_transformer_block.tt` trains a TransformerBlock
+  on all three engines (AST, IR-O0, IR-O1) with byte-identical output.
+- NOT DONE: Conv1D/Conv3D, BatchNorm,
   weight/init schemes beyond Kaiming-uniform, mixed precision.
+
 
 
 ## Milestone 8 — Training 🟡 PARTIAL (started v0.2.0)

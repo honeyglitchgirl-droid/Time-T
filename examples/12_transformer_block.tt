@@ -1,0 +1,38 @@
+// Example 12: Transformer Block training in Time-T
+// Demonstrates MultiheadAttention, LayerNorm, GELU, and residual connections.
+
+fn main() {
+    let block = nn.TransformerBlock(8, 2, 2.0, 42)
+
+    let x = tensor([
+        [[0.5, -0.2, 0.1, 0.8, -0.5, 0.3, 0.2, -0.1],
+         [0.1, 0.9, -0.4, 0.2, 0.3, -0.7, 0.5, 0.0]],
+        [[-0.3, 0.4, 0.6, -0.2, 0.1, 0.5, -0.8, 0.4],
+         [0.7, -0.1, 0.2, 0.4, -0.6, 0.2, 0.1, -0.5]]
+    ])
+
+    let target = tensor([
+        [[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+         [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]],
+        [[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+         [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]]
+    ])
+
+    let opt = optim.Adam(block.parameters(), lr=0.03)
+
+    var step = 0
+    while step < 40 {
+        let out = block(x)
+        let loss = nn.mse_loss(out, target)
+        loss.backward()
+        opt.step()
+        opt.zero_grad()
+        step = step + 1
+    }
+
+    let final_out = block(x)
+    print("trained TransformerBlock successfully")
+    print(final_out.shape[0])
+    print(final_out.shape[1])
+    print(final_out.shape[2])
+}

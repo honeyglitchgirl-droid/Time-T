@@ -28,9 +28,11 @@ work unless it is backed by a passing test.**
   seeded `Dropout`), losses (`MSE`, `CrossEntropy`, `BCE`), optimizers
   (`SGD`, `Adam`) — proven by training runs that must reach loss/accuracy
   thresholds in tests, not just "loss went down".
-- Neural-network layers: Linear, ReLU/Sigmoid/Tanh/Softmax, Flatten,
+- Neural-network layers: Linear, ReLU/Sigmoid/Tanh/GELU/Softmax, Flatten,
   Dropout (seeded), Conv2D (stride/padding, gradient-checked),
-  Embedding, and LayerNorm (affine scale/shift, gradient-checked);
+  Embedding, LayerNorm (affine scale/shift, gradient-checked),
+  MultiheadAttention (multi-head scaled dot-product attention, gradient-checked),
+  and TransformerBlock (Pre-LN Transformer Encoder);
   losses MSE/CrossEntropy/BCE; Sequential. Optimizers: SGD,
   Adam, AdamW (decoupled decay). Training utilities: `train.fit()`
   (full-batch), `train.fit_loader()` with `TensorDataset`/`DataLoader`
@@ -47,12 +49,13 @@ work unless it is backed by a passing test.**
   byte-verified subset to a native binary via C + your system compiler)
   are real; `profile`, `export`, `package`, `doctor` remain explicit,
   machine-readable "not implemented yet" stubs (never silent no-ops).
-- 425 automated tests across lexer/parser/typechecker/interpreter/IR/
+- 437 automated tests across lexer/parser/typechecker/interpreter/IR/
   IR-executor/optimizer/tensor/autodiff/backend/nn/train/checkpoint/modules/
-  CLI/examples/differential/fuzz/diagnostics/layernorm (incl. a 3-engine differential gate: same bytes from AST interpreter, IR-O0, and IR-O1) (`pytest -q`).
-- 8 runnable example programs with byte-exact expected output
+  CLI/examples/differential/fuzz/diagnostics/layernorm/transformer (incl. a 3-engine differential gate: same bytes from AST interpreter, IR-O0, and IR-O1) (`pytest -q`).
+- 9 runnable example programs with byte-exact expected output
   (`examples/*.tt` + `examples/*.expected`), incl. Adam + cross-entropy
-  XOR classifier, Conv2D center detector, and LayerNorm MLP written in Time-T.
+  XOR classifier, Conv2D center detector, LayerNorm MLP, and Transformer Block written in Time-T.
+
 
 - A real (not fabricated) benchmark harness with results written to
   `benchmarks/results/*.json`, labeled with the actual host CPU/platform.

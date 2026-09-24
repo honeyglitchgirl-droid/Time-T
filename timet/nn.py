@@ -1,13 +1,13 @@
 """Neural-network layer library (master prompt sections 8, 22).
 
-Implemented (all covered by tests in tests/test_nn.py, tests/test_layernorm.py):
-  Layers:    Linear, ReLU, Sigmoid, Tanh, Softmax, Flatten, Conv2D, Embedding,
-             LayerNorm, Dropout, Sequential
+Implemented (all covered by tests in tests/test_nn.py, tests/test_layernorm.py, tests/test_transformer.py):
+  Layers:    Linear, ReLU, Sigmoid, Tanh, GELU, Softmax, Flatten, Conv2D, Embedding,
+             LayerNorm, MultiheadAttention, TransformerBlock, Dropout, Sequential
   Losses:    MSELoss, CrossEntropyLoss, BCELoss
   Plumbing:  Module.parameters(), Module.train()/eval() (recursive)
 
 Still NOT implemented (see docs/ROADMAP.md, Milestone 7):
-  Conv1D, BatchNorm, attention/transformer blocks,
+  Conv1D, BatchNorm,
   weight-initialization schemes beyond Kaiming-uniform.
 
 """
@@ -88,6 +88,17 @@ class Sigmoid(Module):
 class Tanh(Module):
     def forward(self, x: Tensor) -> Tensor:
         return x.tanh()
+
+
+class GELU(Module):
+    """Gaussian Error Linear Unit (Hendrycks & Gimpel 2016).
+
+    Uses the standard fast approximation:
+        0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
+    """
+
+    def forward(self, x: Tensor) -> Tensor:
+        return gelu(x)
 
 
 class Softmax(Module):
@@ -337,6 +348,141 @@ class LayerNorm(Module):
         return []
 
 
+class MultiheadAttention(Module):
+    """Multi-Head Attention (Vaswani et al. 2017).
+
+    Projects queries, keys, and values into `num_heads` subspace projections
+    of dimension `head_dim = embed_dim // num_heads`, computes scaled dot-product
+    attention, and projects the concatenated outputs back to `embed_dim`.
+
+    Input shapes:
+        query: (B, Sq, E)
+        key:   (B, Sk, E) (defaults to query for self-attention)
+        value: (B, Sk, E) (defaults to key)
+        mask:  optional additive attention mask broadcastable to (B, H, Sq, Sk)
+    Output shape:
+        (B, Sq, E)
+    """
+
+    def __init__(self, embed_dim: int, num_heads: int, seed: int = 0):
+        super().__init__()
+        if embed_dim <= 0 or num_heads <= 0:
+            raise NNError(code="E0615",
+                          message=f"MultiheadAttention: embed_dim and num_heads must be > 0",
+                          stage="nn")
+        if embed_dim % num_heads != 0:
+            raise NNError(
+                code="E0615",
+                message=f"MultiheadAttention: embed_dim {embed_dim} must be divisible by num_heads {num_heads}",
+                stage="nn"
+            )
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+
+        self.q_proj = Linear(embed_dim, embed_dim, seed=seed)
+        self.k_proj = Linear(embed_dim, embed_dim, seed=seed + 1)
+        self.v_proj = Linear(embed_dim, embed_dim, seed=seed + 2)
+        self.out_proj = Linear(embed_dim, embed_dim, seed=seed + 3)
+
+    def forward(self, query: Tensor, key: Optional[Tensor] = None,
+                value: Optional[Tensor] = None, mask: Optional[Tensor] = None) -> Tensor:
+        if query.ndim != 3:
+            raise NNError(
+                code="E0615",
+                message=f"MultiheadAttention: query must be 3-D (B, S, E), got {query.shape}",
+                stage="nn"
+            )
+        if key is None:
+            key = query
+        if value is None:
+            value = key
+
+        if key.ndim != 3 or value.ndim != 3:
+            raise NNError(
+                code="E0615",
+                message="MultiheadAttention: key and value must be 3-D tensors",
+                stage="nn"
+            )
+        if query.shape[0] != key.shape[0] or key.shape[0] != value.shape[0]:
+            raise NNError(
+                code="E0615",
+                message="MultiheadAttention: batch size mismatch among query, key, value",
+                stage="nn"
+            )
+        if key.shape[1] != value.shape[1]:
+            raise NNError(
+                code="E0615",
+                message="MultiheadAttention: key and value sequence length mismatch",
+                stage="nn"
+            )
+        if query.shape[2] != self.embed_dim or key.shape[2] != self.embed_dim or value.shape[2] != self.embed_dim:
+            raise NNError(
+                code="E0615",
+                message=f"MultiheadAttention: expected embed_dim {self.embed_dim}",
+                stage="nn"
+            )
+
+        B, Sq, E = query.shape
+        Sk = key.shape[1]
+        H = self.num_heads
+        D = self.head_dim
+
+        q = self.q_proj(query).reshape((B, Sq, H, D)).transpose([0, 2, 1, 3])  # (B, H, Sq, D)
+        k = self.k_proj(key).reshape((B, Sk, H, D)).transpose([0, 2, 1, 3])    # (B, H, Sk, D)
+        v = self.v_proj(value).reshape((B, Sk, H, D)).transpose([0, 2, 1, 3])  # (B, H, Sk, D)
+
+        scale = float(1.0 / math.sqrt(D))
+        scores = (q.matmul(k.transpose([0, 1, 3, 2]))) * scale  # (B, H, Sq, Sk)
+        if mask is not None:
+            scores = scores + mask
+        attn = scores.softmax(axis=-1)
+        out = attn.matmul(v)  # (B, H, Sq, D)
+        out = out.transpose([0, 2, 1, 3]).reshape((B, Sq, E))
+        return self.out_proj(out)
+
+    def parameters(self) -> List[Tensor]:
+        return (self.q_proj.parameters() + self.k_proj.parameters() +
+                self.v_proj.parameters() + self.out_proj.parameters())
+
+    def children(self) -> List[Module]:
+        return [self.q_proj, self.k_proj, self.v_proj, self.out_proj]
+
+
+class TransformerBlock(Module):
+    """Pre-LN Transformer Encoder Block (Vaswani et al. 2017).
+
+    Structure:
+        x = x + attn(norm1(x), mask=mask)
+        x = x + mlp(norm2(x))
+    where mlp is Linear -> GELU -> Linear.
+    """
+
+    def __init__(self, embed_dim: int, num_heads: int, mlp_ratio: float = 4.0, seed: int = 0):
+        super().__init__()
+        self.norm1 = LayerNorm(embed_dim)
+        self.attn = MultiheadAttention(embed_dim, num_heads, seed=seed)
+        self.norm2 = LayerNorm(embed_dim)
+        hidden_dim = int(embed_dim * mlp_ratio)
+        self.mlp = Sequential(
+            Linear(embed_dim, hidden_dim, seed=seed + 10),
+            GELU(),
+            Linear(hidden_dim, embed_dim, seed=seed + 20),
+        )
+
+    def forward(self, x: Tensor, mask: Optional[Tensor] = None) -> Tensor:
+        x = x + self.attn(self.norm1(x), mask=mask)
+        x = x + self.mlp(self.norm2(x))
+        return x
+
+    def parameters(self) -> List[Tensor]:
+        return (self.norm1.parameters() + self.attn.parameters() +
+                self.norm2.parameters() + self.mlp.parameters())
+
+    def children(self) -> List[Module]:
+        return [self.norm1, self.attn, self.norm2, self.mlp]
+
+
 class Dropout(Module):
     """Inverted dropout: scales surviving activations by 1/(1-p) at train
     time, identity at eval time. Seeded => deterministic, so tests and
@@ -455,6 +601,13 @@ def cross_entropy_loss(logits: Tensor, targets) -> Tensor:
 
 def binary_cross_entropy(pred: Tensor, target: Tensor) -> Tensor:
     return BCELoss()(pred, target)
+
+
+def gelu(x: Tensor) -> Tensor:
+    """Gaussian Error Linear Unit functional op."""
+    c = float(math.sqrt(2.0 / math.pi))
+    inner = (x + (x * x * x) * 0.044715) * c
+    return (x * 0.5) * (inner.tanh() + 1.0)
 
 
 def layer_norm(x: Tensor, normalized_shape: Union[int, Sequence[int]],

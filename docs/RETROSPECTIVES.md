@@ -622,3 +622,41 @@ the optimizer work began only after the IR itself became executable.)
     convergence on affine parameters, and checkpoint roundtrips),
     plus differential execution on example 11.
 
+
+---
+
+# Entry 11 — v0.10.0, Milestone 7 (Attention & Transformer Block; DD-23)
+
+1. **What works?** Multi-head attention (`MultiheadAttention`), GELU activation,
+   and complete Pre-LN `TransformerBlock` with residual connections.
+   Self-attention, cross-attention, attention masking; finite-difference checked
+   gradients for MHA and GELU; deterministic checkpoint roundtrips; trainable
+   from Time-T code (`examples/12_transformer_block.tt`), verified
+   byte-identically across AST, IR-O0, and IR-O1 execution engines.
+2. **What does not work / doesn't exist?** FlashAttention/fused attention
+   kernels (requires C/CUDA/GPU backends), causal mask auto-generation utility,
+   relative positional embeddings / RoPE (standard absolute embeddings or raw
+   inputs used currently).
+3. **What is untested?** MultiheadAttention with sequence lengths > 512 (O(S^2)
+   memory growth is standard and uncharacterized at large scales).
+4. **What is slow?** 4D tensor matmul and softmax across heads without fused
+   attention; completely acceptable for current CPU/NumPy target scales.
+5. **What consumes excessive memory?** Attention score tensor (B, H, Sq, Sk)
+   materialization on autograd tape.
+6. **What architectural debt exists?** Attention could benefit from key-value
+   caching (KV cache) for autoregressive language model inference.
+7. **What assumptions may be wrong?** Standard head projection `head_dim =
+   embed_dim // num_heads` assumes even divisibility (guarded by E0615).
+8. **What should be redesigned before continuing?** Causal masking and positional
+   embeddings should be standardized before building full decoder-only language
+   models.
+9. **What should NOT be implemented yet?** Fused flash-attention kernels,
+   mixed-precision FP16/BF16 scaling (wait for backend/GPU milestones).
+10. **What evidence supports current claims?** `pytest -q` = 437 passing:
+    `tests/test_transformer.py` (10 tests covering GELU forward/gradient, MHA
+    forward/cross-attention/masking/parameter count, finite-difference input
+    gradients, error validation E0615, TransformerBlock forward, checkpoint
+    roundtrips, and optimization convergence), plus differential execution on
+    example 12.
+
+

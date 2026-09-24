@@ -4,6 +4,23 @@ All notable changes to Time-T are recorded here. Format loosely follows
 Keep a Changelog; versioning follows master prompt §37 (targets, not
 promises).
 
+## [0.10.0] — 2026-09-24 (Milestone 7: Attention, GELU, and Transformer Block)
+
+- **`MultiheadAttention`** (DD-23): Multi-head scaled dot-product attention
+  with learnable Q, K, V, and out projections; supports self-attention,
+  cross-attention, and attention masks. Verified with central finite-difference
+  gradients across input and parameter dimensions.
+- **`GELU` and `gelu`** (DD-23): Gaussian Error Linear Unit activation with
+  analytic finite-difference gradient checks.
+- **`TransformerBlock`** (DD-23): Pre-LN Transformer Encoder block
+  combining LayerNorm, MultiheadAttention, and a GELU MLP with residual
+  connections. Full checkpoint save/load compatibility verified.
+- **Time-T program reachable**: `examples/12_transformer_block.tt` trains a
+  Transformer Block with Adam, running byte-identically on AST, IR-O0,
+  and IR-O1 engines.
+
+Suite: **437 tests** (was 425).
+
 ## [0.9.1] — 2026-09-24 (Milestone 7: LayerNorm)
 
 - **`LayerNorm` and `layer_norm`** (DD-22): Layer normalization

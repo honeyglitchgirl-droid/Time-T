@@ -576,7 +576,35 @@ at the repo's standard 1e-3 tolerance.
    section). Best-epoch weights remain checkpoint.py's job.
 ---
 
-## DD-22: Layer Normalization (Milestone 7: LayerNorm)
+## DD-23: Multi-Head Attention, GELU, and Transformer Block (Milestone 7 expansion)
+
+**Decisions (v0.10.0):**
+1. `MultiheadAttention` (Vaswani et al. 2017) layer:
+   - Projects queries, keys, and values into `num_heads` heads of dimension
+     `head_dim = embed_dim // num_heads`.
+   - Scaled dot-product attention computed via autograd-tracked 4D tensor
+     matmul, transpose, and softmax: `scores = (q @ k.T) / sqrt(d_k) + mask`.
+   - Supports self-attention (key=None, value=None defaults to query),
+     cross-attention, and optional attention mask broadcasting.
+   - Input shape (B, S, E); Output shape (B, S, E).
+2. `GELU` (Hendrycks & Gimpel 2016) activation module and `gelu` functional
+   op implemented using the standard fast approximation:
+   `0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))`. Verified by
+   central finite differences.
+3. `TransformerBlock`:
+   - Modern Pre-LN architecture:
+     `x = x + attn(norm1(x), mask=mask)`
+     `x = x + mlp(norm2(x))`
+     where `mlp = Linear -> GELU -> Linear`.
+   - Fully compatible with `checkpoint.save`, `checkpoint.save_bin`,
+     and training state resumption.
+4. Correctness verified by central finite-difference gradient checking on MHA
+   and GELU, dimension validation error handling (`E0615`), and end-to-end
+   optimization convergence.
+5. Reachable from Time-T code via `nn.MultiheadAttention`, `nn.GELU`,
+   and `nn.TransformerBlock`. Demonstrated in `examples/12_transformer_block.tt`
+   with byte-exact output across AST interpreter, IR-O0, and IR-O1.
+
 
 **Decisions (v0.9.1):**
 1. `LayerNorm` (Ba, Kiros, Hinton 2016) layer and `layer_norm` functional
