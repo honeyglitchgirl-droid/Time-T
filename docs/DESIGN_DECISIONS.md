@@ -593,7 +593,27 @@ at the repo's standard 1e-3 tolerance.
 
 ---
 
+## DD-30: Robust Runtime Error Guardrails (Audit Resolution, Master Prompt §27, §31)
+
+**Decision (v1.2.0):**
+1. Division and Modulo by Zero:
+   - Integers and floating point division (`/`) by zero raise `RuntimeErr` with code `E0507` across the AST interpreter and `IrExecError` in the IR executor.
+   - Modulo (`%`) by zero raises structured diagnostic `E0508`.
+   - Replaces unhandled Python `ZeroDivisionError` with compiler-standard diagnostic reporting.
+2. Recursion Limit Safety:
+   - Both `Interpreter` and `IRExecutor` enforce configurable recursion safety depth limits (default 1000 frames).
+   - Exceeding call depth raises diagnostic `E0509` ("maximum recursion depth exceeded") with span and location, eliminating unhandled `RecursionError` crashes.
+3. Interactive REPL Enhancement:
+   - `time-t repl` accepts both top-level statements (`let`, `var`, assignments) and expressions, maintaining persistent bindings throughout the session.
+4. Native Build Boundary Transparency:
+   - Documented the exact C-emitter supported language boundary in `docs/NATIVE_SUBSET.md`.
+5. Self-Contradiction Resolution in Documentation:
+   - Reconciled `README.md` to reflect actual implemented features and align with `docs/ROADMAP.md`.
+
+---
+
 ## DD-29: User-Defined Struct Declarations and Compound Types (Milestone 2 completion, Master Prompt §6, §7)
+
 
 **Decision (v1.1.0):**
 1. Syntax:

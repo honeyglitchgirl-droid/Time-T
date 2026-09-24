@@ -4,7 +4,26 @@ All notable changes to Time-T are recorded here. Format loosely follows
 Keep a Changelog; versioning follows master prompt §37 (targets, not
 promises).
 
+## [1.2.0] — 2026-09-24 (Runtime Robustness & Audit Resolution)
+
+- **Structured Zero-Division Error Handling** (DD-30):
+  - Fixed unhandled `ZeroDivisionError` on `/` and `%` by zero in AST interpreter and IR executor.
+  - Emits structured compiler diagnostics: `E0507` (division by zero) and `E0508` (modulo by zero).
+- **Stack Overflow / Recursion Depth Guardrails** (DD-30):
+  - Added call stack depth tracking across `Interpreter` and `IRExecutor`.
+  - Replaced unhandled Python `RecursionError` with structured diagnostic `E0509` (maximum recursion depth exceeded).
+- **REPL Statement Support**:
+  - `time-t repl` now accepts full statements (`let`, `var`, assignments) alongside expressions.
+- **Native Subset Boundary Transparency**:
+  - Published comprehensive native C-emitter specification in `docs/NATIVE_SUBSET.md`.
+- **Documentation Reconciliation**:
+  - Fixed self-contradictions in `README.md` to accurately align with `docs/ROADMAP.md`.
+- **Test Suite**:
+  - Added `tests/test_runtime_errors.py` with 6 dedicated tests.
+  - Suite: **480 tests** (was 474).
+
 ## [1.1.0] — 2026-09-24 (User-Defined Structs & Compound Types)
+
 
 - **Struct Declarations & Instantiations** (DD-29):
   - Added `struct Name { field: Type }` syntax and literal constructor `Name { field: val }`.

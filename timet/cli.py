@@ -401,8 +401,10 @@ def cmd_build(args) -> int:
 def cmd_repl(args) -> int:
     from timet.parser import Parser
     from timet.lexer import tokenize
+    from timet.typechecker import TypeChecker
     interp = Interpreter()
-    print(f"Time-T v{__version__} REPL. Type an expression or Ctrl-D to exit.")
+    tc = TypeChecker()
+    print(f"Time-T v{__version__} REPL. Type an expression or statement (or Ctrl-D to exit).")
     while True:
         try:
             line = input("> ")
@@ -413,19 +415,31 @@ def cmd_repl(args) -> int:
             continue
         try:
             tokens = tokenize(line)
+            # Try parsing as statement first (let, var, assignment, expr)
             p = Parser(tokens)
-            expr = p.parse_expr()
-            from timet.typechecker import TypeChecker
-            tc = TypeChecker()
-            tc.infer(expr, tc.global_scope)
-            value = interp.eval(expr, interp.globals)
-            if value is not None:
-                if hasattr(value, "tolist"):
-                    print(repr(value))
-                else:
-                    print(value)
+            try:
+                stmt = p.parse_stmt()
+                tc.check_stmt(stmt, tc.global_scope)
+                val = interp.exec_stmt(stmt, interp.globals)
+                if val is not None:
+                    if hasattr(val, "tolist"):
+                        print(repr(val))
+                    else:
+                        print(val)
+            except Diagnostic:
+                # Fallback to expression parsing
+                p2 = Parser(tokens)
+                expr = p2.parse_expr()
+                tc.infer(expr, tc.global_scope)
+                val = interp.eval(expr, interp.globals)
+                if val is not None:
+                    if hasattr(val, "tolist"):
+                        print(repr(val))
+                    else:
+                        print(val)
         except Diagnostic as e:
             print(e.human(), file=sys.stderr)
+
 
 
 def cmd_not_implemented(name):

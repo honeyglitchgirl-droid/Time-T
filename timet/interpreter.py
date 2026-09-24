@@ -104,13 +104,16 @@ class Environment:
 
 class Interpreter:
     def __init__(self, stdout_write=None, loader: Optional[ModuleLoader] = None,
-                 importer_path: str = "<input>"):
+                 importer_path: str = "<input>", max_recursion_depth: int = 1000):
         self.globals = Environment()
         for name, value in ENGINE_GLOBALS.items():
             self.globals.define(name, value)
         self._stdout_write = stdout_write or (lambda s: print(s))
         self._loader = loader or ModuleLoader()
         self._importer_path = importer_path
+        self._call_depth = 0
+        self._max_call_depth = max_recursion_depth
+
 
     def run(self, program: A.Program):
         for stmt in program.statements:
@@ -229,6 +232,15 @@ class Interpreter:
         env.define(stmt.binding, mod.value)
 
     def call_function(self, fn: Function, args: List[Any], kwargs: Dict[str, Any], span: SourceSpan):
+        if self._call_depth >= self._max_call_depth:
+            raise RuntimeErr(
+                code="E0509",
+                message=f"maximum recursion depth exceeded ({self._max_call_depth} frames)",
+                span=span,
+                stage="interpreter",
+                note="recursive call depth reached safety limit; check for unbounded recursion",
+            )
+        self._call_depth += 1
         inner = fn.closure.child()
         for i, p in enumerate(fn.decl.params):
             if i < len(args):
@@ -236,6 +248,7 @@ class Interpreter:
             elif p.name in kwargs:
                 inner.define(p.name, kwargs[p.name])
             else:
+                self._call_depth -= 1
                 raise RuntimeErr(
                     code="E0502",
                     message=f"missing argument '{p.name}' in call to '{fn.name}'",
@@ -246,7 +259,10 @@ class Interpreter:
             self.exec_block(fn.decl.body, inner)
         except ReturnSignal as r:
             return r.value
+        finally:
+            self._call_depth -= 1
         return None
+
 
     # ---------------- expressions ----------------
 
@@ -337,10 +353,27 @@ class Interpreter:
         if op == "*":
             return left * right
         if op == "/":
+            if right == 0:
+                raise RuntimeErr(
+                    code="E0507",
+                    message="division by zero",
+                    span=SourceSpan(expr.line, expr.col),
+                    stage="interpreter",
+                    note="divisor evaluated to 0; division by zero is undefined",
+                )
             return left / right
         if op == "%":
+            if right == 0:
+                raise RuntimeErr(
+                    code="E0508",
+                    message="modulo by zero",
+                    span=SourceSpan(expr.line, expr.col),
+                    stage="interpreter",
+                    note="divisor evaluated to 0; modulo by zero is undefined",
+                )
             return left % right
         if op == "@":
+
             return left @ right
         if op == "==":
             return left == right

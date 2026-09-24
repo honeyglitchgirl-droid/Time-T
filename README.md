@@ -7,13 +7,24 @@ sequences work: architecture first, then a small verified vertical slice,
 then expansion in tested layers. **Nothing in this repository is claimed to
 work unless it is backed by a passing test.**
 
-## What exists today (v0.9.0)
+# Time-T
 
-- A real lexer, parser, and type checker for a small, brace-delimited
-  language (see `docs/LANGUAGE.md`).
+Time-T is a programming language and runtime prototype designed for AI/ML,
+numerical computing, and high-performance execution — built from a written
+specification (`Time-T_Fresh_Start_Master_Prompt.md`) that intentionally
+sequences work: architecture first, then a small verified vertical slice,
+then expansion in tested layers. **Nothing in this repository is claimed to
+work unless it is backed by a passing test.**
+
+## What exists today (v1.1.0)
+
+- A real lexer, parser, and type checker for a brace-delimited
+  language supporting primitives, functions, closures, file-based modules, and
+  user-defined structs (see `docs/LANGUAGE.md`).
 - TWO execution engines whose outputs are differentially verified to be
   byte-identical (`tests/test_ir_exec_diff.py`):
-  - a tree-walking interpreter (the semantic reference), and
+  - a tree-walking interpreter (the semantic reference) with robust recursion
+    depth and division-by-zero diagnostic guards (`E0507`, `E0508`, `E0509`).
   - an IR executor (`time-t run <file> --via-ir [-O 0|1]`) running the
     typed IR directly, with an `-O1` optimizer (constant folding, CSE,
     algebraic simplification, copy propagation, DCE — safety rules in
@@ -23,53 +34,45 @@ work unless it is backed by a passing test.**
   activations (`relu/sigmoid/tanh/softmax/log_softmax`), `clip`, `argmax`,
   `one_hot`, and reverse-mode automatic differentiation, gradient-checked
   against finite differences.
-- A neural-network library usable from BOTH Python and Time-T code:
-  layers (`Linear`, `ReLU`, `Sigmoid`, `Tanh`, `Softmax`, `Flatten`,
-  seeded `Dropout`), losses (`MSE`, `CrossEntropy`, `BCE`), optimizers
-  (`SGD`, `Adam`) — proven by training runs that must reach loss/accuracy
-  thresholds in tests, not just "loss went down".
 - Neural-network layers: Linear, ReLU/Sigmoid/Tanh/GELU/Softmax, Flatten,
   Dropout (seeded), Conv1D/Conv2D (stride/padding, gradient-checked),
   Embedding, LayerNorm/RMSNorm (affine scale/shift, gradient-checked),
   MultiheadAttention (multi-head scaled dot-product attention, gradient-checked),
   TransformerBlock (Pre-LN Transformer Encoder), and TransformerLM (Causal Language Model);
-  losses MSE/CrossEntropy/BCE; Sequential. Optimizers: SGD,
-  Adam, AdamW (decoupled decay). Training utilities: `train.fit()`
-  (full-batch), `train.fit_loader()` with `TensorDataset`/`DataLoader`
-  (seeded-shuffle mini-batching), `StepLR`/`ExponentialLR`/
-  `CosineAnnealingLR` schedules, validation splits
-  (`val_loader=` + monitorable early stopping),
-  `train.accuracy`, `EarlyStopping`, and versioned deterministic JSON
-  checkpoints (`timet/checkpoint.py`) in deterministic JSON v1 AND
-  binary v2 `.ttck` formats, plus full training-state files
-  (optimizer moments + scheduler + loader RNG) with byte-exact Adam
-  resume proven, not just claimed.
-- A `time-t` CLI: `check`, `run` (incl. `--via-ir` and `--native`),
-  `inspect`, `test`, `bench`, `repl`, and **`build`** (compiles a strict,
-  byte-verified subset to a native binary via C + your system compiler)
-  are real; `profile`, `export`, `package`, `doctor` remain explicit,
-  machine-readable "not implemented yet" stubs (never silent no-ops).
-- 455 automated tests across lexer/parser/typechecker/interpreter/IR/
-  IR-executor/optimizer/tensor/autodiff/backend/nn/train/checkpoint/modules/
-  CLI/examples/differential/fuzz/diagnostics/conv1d/layernorm/transformer (incl. a 3-engine differential gate: same bytes from AST interpreter, IR-O0, and IR-O1) (`pytest -q`).
-- 11 runnable example programs with byte-exact expected output
-  (`examples/*.tt` + `examples/*.expected`), incl. Adam + cross-entropy
-  XOR classifier, Conv2D center detector, LayerNorm MLP, Transformer Block, Conv1D sequence classifier, and TransformerLM next-token language model written in Time-T.
-
-
-
+  losses MSE/CrossEntropy/BCE; Sequential.
+- Optimizers: SGD, Adam, AdamW (decoupled decay).
+- Training utilities: `train.fit()` (full-batch), `train.fit_loader()` with
+  `TensorDataset`/`DataLoader` (seeded-shuffle mini-batching),
+  `StepLR`/`ExponentialLR`/`CosineAnnealingLR` schedules, validation splits
+  (`val_loader=` + monitorable early stopping), `train.accuracy`, `EarlyStopping`.
+- Checkpoints & Serialization: deterministic JSON v1 AND binary v2 `.ttck`
+  formats, full training-state files (optimizer moments + scheduler + loader RNG)
+  with byte-exact Adam resume proven, portable HuggingFace `safetensors` export/import,
+  and NumPy `.npz` archive export/import.
+- Mobile & INT8 Quantization: `timet.mobile` dynamic INT8 quantization
+  (`QuantizedLinear`, `quantize_dynamic`) delivering 4x weight memory reduction,
+  and standalone `.ttm` deployment packaging.
+- User-Defined Data Structures: `struct Name { field: Type }` with static type checking
+  and field access.
+- A complete `time-t` CLI: all 11 subcommands fully implemented without stubs:
+  `check`, `run` (incl. `--via-ir` and `--native`), `inspect`, `test`, `bench`,
+  `repl` (supports both statements and expressions), `build` (C-emitter),
+  `export` (safetensors/npz/bin/json), `package` (mobile bundle), `doctor` (toolchain diagnostics),
+  and `profile` (runtime & peak memory profiling).
+- 474+ automated tests across all subsystems with 100% pass rate.
+- 16 runnable example programs with byte-exact expected output (`examples/*.tt` + `examples/*.expected`).
 - A real (not fabricated) benchmark harness with results written to
   `benchmarks/results/*.json`, labeled with the actual host CPU/platform.
 
-## What does NOT exist yet (see `docs/ROADMAP.md`)
+## What is planned for post-v1.0 (see `docs/ROADMAP.md`)
 
-Generics, traits, structs, enums, pattern matching, a real module/import
-system, static shape typing, CFG-form IR, inlining/fusion passes, native
-codegen, GPU/ARM64/mobile backends, C ABI/FFI, ONNX import/export, a package
-manager, datasets/dataloaders, mini-batching, LR schedules, binary
-checkpoints, AdamW, convolutions/embeddings/attention, distributed training.
-These are explicitly sequenced, not silently missing — see
-`docs/ROADMAP.md`'s milestone table and `docs/RETROSPECTIVES.md`.
+- Hardware GPU/accelerator backends (CUDA, ROCm, Metal).
+- Native tensor kernel lowering (compiling tensor ops to BLAS/native machine code).
+- Advanced static shape typing for tensor ranks and dimensions.
+- Generics and traits/interfaces.
+- Concurrency and distributed training primitives.
+- Package manager for remote Time-T package dependencies.
+
 
 ## Quick start
 

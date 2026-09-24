@@ -241,8 +241,8 @@ _BINOPS = {
     "add": lambda a, b: a + b,
     "sub": lambda a, b: a - b,
     "mul": lambda a, b: a * b,
-    "div": lambda a, b: a / b,
-    "mod": lambda a, b: a % b,
+    "div": lambda a, b: _safe_div(a, b),
+    "mod": lambda a, b: _safe_mod(a, b),
     "matmul": lambda a, b: a @ b,
     "eq": lambda a, b: a == b,
     "ne": lambda a, b: not (a == b),
@@ -257,13 +257,29 @@ _BINOPS = {
 }
 
 
+def _safe_div(a, b):
+    if b == 0:
+        raise IrExecError(code="E0507", message="IR executor: division by zero", stage="ir-exec")
+    return a / b
+
+
+def _safe_mod(a, b):
+    if b == 0:
+        raise IrExecError(code="E0508", message="IR executor: modulo by zero", stage="ir-exec")
+    return a % b
+
+
+
 class IRExecutor:
-    def __init__(self, program: TirProgram, stdout_write=None):
+    def __init__(self, program: TirProgram, stdout_write=None, max_call_depth: int = 1000):
         self.program = program
         self.functions = program.function_table()
         self.stdout_write = stdout_write or (lambda s: print(s))
         self.main_frame: Optional[Frame] = None
         self._initialized: set = set()  # __init__<module> fns already run
+        self._call_depth = 0
+        self._max_call_depth = max_call_depth
+
 
     # -- public --
 
@@ -304,7 +320,15 @@ class IRExecutor:
                 self._initialized.add(name)
                 self._exec_function_body(target, self.main_frame)
                 return None
+            if self._call_depth >= self._max_call_depth:
+                raise IrExecError(
+                    code="E0509",
+                    message=f"IR executor: maximum recursion depth exceeded ({self._max_call_depth} frames)",
+                    stage="ir-exec",
+                )
+            self._call_depth += 1
             if len(args) != len(target.params):
+                self._call_depth -= 1
                 raise IrExecError(
                     code="E0702",
                     message=f"IR executor: '{name}' expects {len(target.params)} arg(s), got {len(args)}",
@@ -318,7 +342,10 @@ class IRExecutor:
                 self._exec_function_body(target, child)
             except _Return as r:
                 return r.value
+            finally:
+                self._call_depth -= 1
             return None
+
         builtin = _BUILTINS.get(name)
         if builtin is None:
             raise IrExecError(code="E0703",
