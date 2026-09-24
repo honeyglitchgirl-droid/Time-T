@@ -593,7 +593,28 @@ at the repo's standard 1e-3 tolerance.
 
 ---
 
+## DD-29: User-Defined Struct Declarations and Compound Types (Milestone 2 completion, Master Prompt §6, §7)
+
+**Decision (v1.1.0):**
+1. Syntax:
+   - `struct Name { field1: Type, field2: Type }`
+   - Instantiation: `let s = Name { field1: val1, field2: val2 }`
+   - Member access: `s.field1`
+2. Static Type Checking:
+   - Type representation: `TStruct(name, fields)`.
+   - Name hoisting ensures mutual references and forward use in function parameters and return types.
+   - Strict field name and type validation emits diagnostics `E0202` (type mismatch) and `E0211` (unknown field).
+3. Runtime & Intermediate Representation:
+   - Evaluated as `StructInstance` in AST interpreter.
+   - Lowers to `make_struct` instruction in IR, preserving field order and labels.
+   - Field reads compile to `field_get` in IR.
+4. Differential Verification:
+   - Verified across AST interpreter, IR-O0, and IR-O1 in `tests/test_structs.py` and `examples/16_structs.tt`.
+
+---
+
 ## DD-28: Complete Language Toolchain and CLI General Availability (Milestone 12, Master Prompt §25, §37)
+
 
 **Decision (v1.0.0):**
 1. All 11 foundational CLI commands specified in master prompt §25 are fully implemented:

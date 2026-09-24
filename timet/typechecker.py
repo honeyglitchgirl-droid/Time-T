@@ -16,8 +16,9 @@ from timet.diagnostics import Diagnostic, SourceSpan
 from timet.modules import ModuleLoader, ModuleError
 from timet.types import (
     Type, TInt, TFloat, TBool, TString, TUnit, TTensor, TFunction, TUnknown,
-    TModule, PRIMITIVE_NAMES, is_numeric,
+    TModule, TStruct, PRIMITIVE_NAMES, is_numeric,
 )
+
 
 
 class TypeError_(Diagnostic):
@@ -71,7 +72,7 @@ BUILTIN_MODULES = {"nn", "optim", "train", "mobile"}
 
 
 
-def _resolve_type_expr(te: A.TypeExpr) -> Type:
+def _resolve_type_expr(te: A.TypeExpr, scope: Optional[Scope] = None) -> Type:
     if te.name in PRIMITIVE_NAMES:
         return PRIMITIVE_NAMES[te.name]
     if te.name == "Tensor":
@@ -81,14 +82,19 @@ def _resolve_type_expr(te: A.TypeExpr) -> Type:
         return TTensor(dtype)
     if te.name == "Function":
         *param_tes, ret_te = te.args
-        return TFunction(tuple(_resolve_type_expr(p) for p in param_tes), _resolve_type_expr(ret_te))
+        return TFunction(tuple(_resolve_type_expr(p, scope) for p in param_tes), _resolve_type_expr(ret_te, scope))
+    if scope is not None:
+        binding = scope.lookup(te.name)
+        if binding is not None and isinstance(binding.ty, TStruct):
+            return binding.ty
     raise TypeError_(
         code="E0200",
         message=f"unknown type '{te.name}'",
         span=SourceSpan(te.line, te.col),
         stage="typechecker",
-        note="known types: Int, Float, Bool, String, Unit, Tensor[dtype]",
+        note="known types: Int, Float, Bool, String, Unit, Tensor[dtype], or declared struct types",
     )
+
 
 
 class TypeChecker:
@@ -103,17 +109,21 @@ class TypeChecker:
     def check_program(self, program: A.Program) -> A.Program:
         scope = self.global_scope
         # First pass: resolve imports so later statements can use module
-        # bindings, then hoist function signatures so mutual calls work.
+        # bindings, then hoist structs and function signatures so mutual calls work.
         for stmt in program.statements:
             if isinstance(stmt, A.ImportStmt):
                 self._check_import(stmt, scope)
         for stmt in program.statements:
+            if isinstance(stmt, A.StructDecl):
+                self._hoist_struct(stmt, scope)
+        for stmt in program.statements:
             if isinstance(stmt, A.FnDecl):
                 self._hoist_fn(stmt, scope)
         for stmt in program.statements:
-            if not isinstance(stmt, A.ImportStmt):
+            if not isinstance(stmt, (A.ImportStmt, A.StructDecl)):
                 self.check_stmt(stmt, scope)
         return program
+
 
     def _check_import(self, stmt: A.ImportStmt, scope: Scope):
         span = SourceSpan(stmt.line, stmt.col)
@@ -158,16 +168,28 @@ class TypeChecker:
     def _tmodule_of(mod) -> TModule:
         return TModule(mod.dotted, tuple(sorted(mod.type_exports.items())))
 
+    def _hoist_struct(self, decl: A.StructDecl, scope: Scope):
+        fields = []
+        for f in decl.fields:
+            fty = _resolve_type_expr(f.type_expr, scope) if f.type_expr else TUnknown()
+            fields.append((f.name, fty))
+        st_ty = TStruct(decl.name, tuple(fields))
+        scope.define(decl.name, st_ty, mutable=False)
+
     def _hoist_fn(self, fn: A.FnDecl, scope: Scope):
         params = tuple(
-            _resolve_type_expr(p.type_expr) if p.type_expr else TUnknown()
+            _resolve_type_expr(p.type_expr, scope) if p.type_expr else TUnknown()
             for p in fn.params
         )
-        ret = _resolve_type_expr(fn.ret_type) if fn.ret_type else TUnit()
+        ret = _resolve_type_expr(fn.ret_type, scope) if fn.ret_type else TUnit()
         scope.define(fn.name, TFunction(params, ret), mutable=False)
 
+
     def check_stmt(self, stmt: A.Stmt, scope: Scope):
+        if isinstance(stmt, A.StructDecl):
+            return
         if isinstance(stmt, A.ImportStmt):
+
             raise TypeError_(
                 code="E0212",
                 message="'import' is only allowed at the top level of a file",
@@ -240,13 +262,14 @@ class TypeChecker:
 
     def _check_let(self, stmt: A.LetStmt, scope: Scope):
         value_ty = self.infer(stmt.value, scope)
-        declared = _resolve_type_expr(stmt.type_expr) if stmt.type_expr else None
+        declared = _resolve_type_expr(stmt.type_expr, scope) if stmt.type_expr else None
         if declared is not None:
             self._require(value_ty, declared, stmt.value, f"'let {stmt.name}' initializer")
             final_ty = declared
         else:
             final_ty = value_ty
         scope.define(stmt.name, final_ty, mutable=stmt.mutable)
+
 
     def _check_assign(self, stmt: A.AssignStmt, scope: Scope):
         if not isinstance(stmt.target, A.Ident):
@@ -275,9 +298,10 @@ class TypeChecker:
     def _check_fn_body(self, fn: A.FnDecl, scope: Scope):
         inner = scope.child()
         for p in fn.params:
-            pty = _resolve_type_expr(p.type_expr) if p.type_expr else TUnknown()
+            pty = _resolve_type_expr(p.type_expr, scope) if p.type_expr else TUnknown()
             inner.define(p.name, pty, mutable=False)
         self.check_block(fn.body, inner)
+
 
     def _require(self, actual: Type, expected: Type, node: A.Node, where: str):
         if isinstance(expected, TUnknown) or isinstance(actual, TUnknown):
@@ -341,9 +365,43 @@ class TypeChecker:
             return self._infer_call(expr, scope)
         if isinstance(expr, A.MethodCall):
             return self._infer_method_call(expr, scope)
+        if isinstance(expr, A.StructInst):
+            binding = scope.lookup(expr.name)
+            if binding is None or not isinstance(binding.ty, TStruct):
+                raise TypeError_(
+                    code="E0203",
+                    message=f"unknown struct '{expr.name}'",
+                    span=SourceSpan(expr.line, expr.col),
+                    stage="typechecker",
+                )
+            st_ty = binding.ty
+            # Check fields
+            for f_name, f_val in expr.fields.items():
+                expected_ty = st_ty.field_type(f_name)
+                if expected_ty is None:
+                    raise TypeError_(
+                        code="E0211",
+                        message=f"struct '{st_ty.name}' has no field '{f_name}'",
+                        span=SourceSpan(expr.line, expr.col),
+                        stage="typechecker",
+                    )
+                actual_ty = self.infer(f_val, scope)
+                self._require(actual_ty, expected_ty, f_val, f"field '{f_name}' of struct '{st_ty.name}'")
+            return st_ty
         if isinstance(expr, A.FieldAccess):
             recv_ty = self.infer(expr.receiver, scope)
+            if isinstance(recv_ty, TStruct):
+                fty = recv_ty.field_type(expr.field)
+                if fty is None:
+                    raise TypeError_(
+                        code="E0211",
+                        message=f"struct '{recv_ty.name}' has no field '{expr.field}'",
+                        span=SourceSpan(expr.line, expr.col),
+                        stage="typechecker",
+                    )
+                return fty
             if isinstance(recv_ty, TModule):
+
                 member = recv_ty.member(expr.field)
                 if member is None:
                     raise TypeError_(

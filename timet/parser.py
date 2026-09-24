@@ -104,7 +104,9 @@ class Parser:
                 return self._parse_no_grad()
             if tok.text == "import":
                 return self._parse_import()
-            if tok.text in ("struct", "enum", "match"):
+            if tok.text == "struct":
+                return self._parse_struct()
+            if tok.text in ("enum", "match"):
                 raise ParseError(
                     code="E0101",
                     message=f"'{tok.text}' is not implemented yet in this version of Time-T",
@@ -112,9 +114,33 @@ class Parser:
                     stage="parser",
                     note="see docs/ROADMAP.md for the feature sequencing",
                 )
+
         return self._parse_expr_or_assign_stmt()
 
+    def _parse_struct(self) -> A.StructDecl:
+        kw = self._advance()  # 'struct'
+        name_tok = self._expect(TokenKind.IDENT, what="struct name")
+        self._expect(TokenKind.LBRACE, what="struct body")
+        fields = []
+        while not self._check(TokenKind.RBRACE):
+            if self._at_end():
+                raise ParseError(
+                    code="E0102",
+                    message="unterminated struct declaration, expected '}'",
+                    span=SourceSpan(kw.line, kw.col),
+                    stage="parser",
+                )
+            f_name = self._expect(TokenKind.IDENT, what="field name")
+            f_ty = None
+            if self._match(TokenKind.COLON):
+                f_ty = self._parse_type()
+            fields.append(A.StructField(f_name.text, f_ty, f_name.line, f_name.col))
+            self._match(TokenKind.COMMA)
+        self._expect(TokenKind.RBRACE, what="struct body")
+        return A.StructDecl(name_tok.text, fields, line=kw.line, col=kw.col)
+
     def _parse_import(self) -> A.ImportStmt:
+
         kw = self._advance()  # 'import'
         parts = [self._expect(TokenKind.IDENT, what="module name").text]
         while self._match(TokenKind.OP, "."):
@@ -331,8 +357,22 @@ class Parser:
             self._advance()
             return A.StringLit(tok.value, line=tok.line, col=tok.col)
         if tok.kind == TokenKind.IDENT:
+            # Check if this is a struct instantiation: Ident { field: val, ... }
+            if self._peek(1).kind == TokenKind.LBRACE and self._is_struct_literal():
+                name_tok = self._advance()
+                self._advance()  # '{'
+                fields = {}
+                while not self._check(TokenKind.RBRACE):
+                    f_name = self._expect(TokenKind.IDENT, what="struct field name").text
+                    self._expect(TokenKind.COLON, what="struct field separator")
+                    f_val = self.parse_expr()
+                    fields[f_name] = f_val
+                    self._match(TokenKind.COMMA)
+                self._expect(TokenKind.RBRACE, what="struct literal end")
+                return A.StructInst(name_tok.text, fields, line=name_tok.line, col=name_tok.col)
             self._advance()
             return A.Ident(tok.text, line=tok.line, col=tok.col)
+
         if tok.kind == TokenKind.KEYWORD and tok.text == "if":
             return self._parse_if_expr()
         if tok.kind == TokenKind.KEYWORD and tok.text == "fn":
@@ -364,7 +404,20 @@ class Parser:
             stage="parser",
         )
 
+    def _is_struct_literal(self) -> bool:
+        # Check if the block starting at pos+1 looks like `{ field: ...`
+        if self._peek(1).kind != TokenKind.LBRACE:
+            return False
+        # Look at the token after '{'
+        p2 = self._peek(2)
+        if p2.kind == TokenKind.RBRACE:
+            return True
+        if p2.kind == TokenKind.IDENT and self._peek(3).kind == TokenKind.COLON:
+            return True
+        return False
+
     def _parse_if_expr(self) -> A.IfExpr:
+
         kw = self._advance()
         cond = self.parse_expr()
         then_b = self._parse_block()

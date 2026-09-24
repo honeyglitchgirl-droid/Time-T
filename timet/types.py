@@ -97,7 +97,24 @@ class TModule(Type):
         return f"module {self.dotted}"
 
 
+@dataclass(frozen=True)
+class TStruct(Type):
+    name: str
+    fields: Tuple[Tuple[str, Type], ...]
+
+    def field_type(self, field_name: str) -> Optional[Type]:
+        for k, v in self.fields:
+            if k == field_name:
+                return v
+        return None
+
+    def __str__(self):
+        f_strs = [f"{k}: {v}" for k, v in self.fields]
+        return f"struct {self.name} {{ {', '.join(f_strs)} }}"
+
+
 PRIMITIVE_NAMES = {
+
     "Int": TInt(),
     "Float": TFloat(),
     "Bool": TBool(),

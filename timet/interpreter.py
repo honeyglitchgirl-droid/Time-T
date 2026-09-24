@@ -5,6 +5,7 @@ the IR today.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 import timet.ast_nodes as A
@@ -50,7 +51,19 @@ class Function:
         return getattr(self.decl, "name", "<lambda>")
 
 
+@dataclass
+class StructInstance:
+    name: str
+    fields: Dict[str, Any]
+
+    def __getattr__(self, item: str):
+        if item in self.fields:
+            return self.fields[item]
+        raise AttributeError(f"Struct '{self.name}' has no field '{item}'")
+
+
 class Environment:
+
     def __init__(self, parent: Optional["Environment"] = None):
         self.parent = parent
         self.vars: Dict[str, Any] = {}
@@ -115,7 +128,11 @@ class Interpreter:
         return result
 
     def exec_stmt(self, stmt: A.Stmt, env: Environment):
+        if isinstance(stmt, A.StructDecl):
+            # Struct declaration recorded
+            return None
         if isinstance(stmt, A.ImportStmt):
+
             self._exec_import(stmt, env)
             return None
         if isinstance(stmt, A.LetStmt):
@@ -260,9 +277,22 @@ class Interpreter:
             return self._eval_call(expr, env)
         if isinstance(expr, A.MethodCall):
             return self._eval_method_call(expr, env)
+        if isinstance(expr, A.StructInst):
+            field_vals = {k: self.eval(v, env) for k, v in expr.fields.items()}
+            return StructInstance(expr.name, field_vals)
         if isinstance(expr, A.FieldAccess):
             recv = self.eval(expr.receiver, env)
+            if isinstance(recv, StructInstance):
+                if expr.field not in recv.fields:
+                    raise RuntimeErr(
+                        code="E0506",
+                        message=f"no field '{expr.field}' on struct {recv.name}",
+                        span=SourceSpan(expr.line, expr.col),
+                        stage="interpreter",
+                    )
+                return recv.fields[expr.field]
             if not hasattr(recv, expr.field):
+
                 raise RuntimeErr(
                     code="E0506",
                     message=f"no field '{expr.field}' on value of type {type(recv).__name__}",

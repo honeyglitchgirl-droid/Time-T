@@ -1,0 +1,35 @@
+// Example 16: User-Defined Structs and Object Modeling
+// Demonstrates defining custom data structures, initialization, and field access.
+struct HyperParams {
+    learning_rate: Float,
+    epochs: Int,
+    batch_size: Int
+}
+
+struct Point {
+    x: Int,
+    y: Int
+}
+
+fn manhattan_dist(p1: Point, p2: Point) -> Int {
+    var dx = p1.x - p2.x
+    if dx < 0 { dx = -dx }
+    var dy = p1.y - p2.y
+    if dy < 0 { dy = -dy }
+    return dx + dy
+}
+
+fn main() {
+    let hp = HyperParams {
+        learning_rate: 0.001,
+        epochs: 50,
+        batch_size: 32
+    }
+
+    print(hp.epochs)
+    print(hp.batch_size)
+
+    let a = Point { x: 3, y: 7 }
+    let b = Point { x: 8, y: 19 }
+    print(manhattan_dist(a, b))
+}

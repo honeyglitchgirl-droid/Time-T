@@ -422,7 +422,15 @@ class IRExecutor:
         if op == "store":
             frame.store_var(ins.result, val(ins.args[0]))
             return
+        if op == "make_struct":
+            s_name = ins.attrs.get("struct", "Struct")
+            f_names = ins.attrs.get("fields", [])
+            fields_dict = {name: val(arg) for name, arg in zip(f_names, ins.args)}
+            from timet.interpreter import StructInstance
+            frame.set_temp(ins.result, StructInstance(s_name, fields_dict))
+            return
         if op == "make_tensor":
+
             frame.set_temp(ins.result, T.tensor(self._tensor_args(ins.args, frame)))
             return
         if op in _BINOPS:
@@ -437,9 +445,17 @@ class IRExecutor:
         if op == "index":
             frame.set_temp(ins.result, val(ins.args[0])[val(ins.args[1])])
             return
-        if op.startswith("field:"):
+        if op == "field_get" or op.startswith("field:"):
             recv = val(ins.args[0])
-            name = op[len("field:"):]
+            name = ins.attrs.get("field") or op[len("field:"):]
+            from timet.interpreter import StructInstance
+            if isinstance(recv, StructInstance):
+                if name not in recv.fields:
+                    raise IrExecError(code="E0705",
+                                      message=f"IR executor: no field '{name}' on struct {recv.name}",
+                                      stage="ir-exec")
+                frame.set_temp(ins.result, recv.fields[name])
+                return
             if not hasattr(recv, name):
                 raise IrExecError(code="E0705",
                                   message=f"IR executor: no field '{name}' on value of type "
@@ -447,6 +463,7 @@ class IRExecutor:
                                   stage="ir-exec")
             frame.set_temp(ins.result, getattr(recv, name))
             return
+
         if op.startswith("method:"):
             name = op[len("method:"):]
             recv = val(ins.args[0])

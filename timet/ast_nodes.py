@@ -124,6 +124,28 @@ class Stmt(Node):
 
 
 @dataclass
+class StructField:
+    name: str
+    type_expr: Optional[TypeExpr]
+    line: int = 0
+    col: int = 0
+
+
+@dataclass
+class StructDecl(Stmt):
+    name: str
+    fields: List[StructField]
+
+
+@dataclass
+class StructInst(Expr):
+    name: str
+    fields: dict  # {field_name: Expr}
+
+
+
+
+@dataclass
 class Param:
     name: str
     type_expr: Optional[TypeExpr]

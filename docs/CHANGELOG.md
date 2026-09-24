@@ -4,7 +4,18 @@ All notable changes to Time-T are recorded here. Format loosely follows
 Keep a Changelog; versioning follows master prompt §37 (targets, not
 promises).
 
+## [1.1.0] — 2026-09-24 (User-Defined Structs & Compound Types)
+
+- **Struct Declarations & Instantiations** (DD-29):
+  - Added `struct Name { field: Type }` syntax and literal constructor `Name { field: val }`.
+  - Type-safe field access `s.field` validated statically with `E0202` and `E0211` diagnostics.
+  - IR lowering with `make_struct` and `field_get` instructions.
+- **Example 16**: `examples/16_structs.tt` demonstrates custom data models, verified
+  byte-identically across AST, IR-O0, and IR-O1 engines.
+- **Suite**: **474 tests** (was 468).
+
 ## [1.0.0] — 2026-09-24 (Milestone 10: ARM64/Mobile & Milestone 12: Toolchain GA)
+
 
 - **INT8 Dynamic Quantization** (DD-27):
   - Added `timet.mobile.quantize_linear`, `dequantize_linear`, and `QuantizedLinear`

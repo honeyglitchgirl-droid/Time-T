@@ -156,7 +156,11 @@ class _Lowerer:
         return last
 
     def lower_stmt(self, stmt: A.Stmt, env: Dict[str, str]) -> Optional[str]:
+        if isinstance(stmt, A.StructDecl):
+            # Struct declarations are compile-time type definitions; no runtime IR op needed
+            return None
         if isinstance(stmt, A.ImportStmt):
+
             # import execution == a call to the dependency's synthetic
             # __init__ function, placed at the import's source position.
             dotted = ".".join(stmt.path)
@@ -254,7 +258,12 @@ class _Lowerer:
             return self.emit("const_bool", ["true" if expr.value else "false"], ty)
         if isinstance(expr, A.StringLit):
             return self.emit("const_str", [json.dumps(expr.value)], ty)
+        if isinstance(expr, A.StructInst):
+            f_names = sorted(expr.fields.keys())
+            f_args = [self.lower_expr(expr.fields[k], env) for k in f_names]
+            return self.emit("make_struct", f_args, ty, {"struct": expr.name, "fields": f_names})
         if isinstance(expr, A.Ident):
+
             if expr.name in env:
                 return env[expr.name]
             if expr.name in self.local_vars:
@@ -326,7 +335,8 @@ class _Lowerer:
                 dotted = self.modules[expr.receiver.name]
                 return self.emit("load", [f"{dotted}.{expr.field}"], ty)
             recv = self.lower_expr(expr.receiver, env)
-            return self.emit(f"field:{expr.field}", [recv], ty)
+            return self.emit("field_get", [recv], ty, {"field": expr.field})
+
         if isinstance(expr, A.Index):
             recv = self.lower_expr(expr.receiver, env)
             idx = self.lower_expr(expr.index, env)

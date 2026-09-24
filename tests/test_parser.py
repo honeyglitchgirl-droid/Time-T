@@ -110,12 +110,12 @@ def test_unterminated_block_error():
 
 
 def test_struct_enum_match_not_implemented():
-    # NOTE: 'import' left this list in v0.3.0 when the module system landed
-    # (tests/test_modules.py); struct/enum/match remain honest stubs.
-    for kw in ("struct", "enum", "match"):
+    # NOTE: 'struct' implemented, enum/match remain honest stubs.
+    for kw in ("enum", "match"):
         with pytest.raises(ParseError) as exc:
             parse(f"{kw} Foo {{}}")
         assert exc.value.code == "E0101"
+
 
 
 def test_import_statement_parses_dotted_path_and_alias():
