@@ -215,3 +215,21 @@ def test_tensor_reshape_args_and_convenience_methods():
     assert b.flatten().shape == (4,)
     assert b.squeeze(0).shape == (2, 2)
     assert b.squeeze(0).unsqueeze(1).shape == (2, 1, 2)
+
+
+def test_tensor_bounds_diagnostics():
+    """Verify structured E0405 error is raised for out-of-bounds indexing."""
+    t = tensor([10.0, 20.0, 30.0])
+    with pytest.raises(TensorError) as exc_info:
+        _ = t[10]
+    assert exc_info.value.code == "E0405"
+    assert "tensor index out of bounds" in exc_info.value.message
+
+    with pytest.raises(TensorError) as exc_info_neg:
+        _ = t[-10]
+    assert exc_info_neg.value.code == "E0405"
+
+    m = tensor([[1.0, 2.0], [3.0, 4.0]])
+    with pytest.raises(TensorError) as exc_info_2d:
+        _ = m[5, 0]
+    assert exc_info_2d.value.code == "E0405"

@@ -104,7 +104,7 @@ class Environment:
 
 class Interpreter:
     def __init__(self, stdout_write=None, loader: Optional[ModuleLoader] = None,
-                 importer_path: str = "<input>", max_recursion_depth: int = 1000):
+                 importer_path: str = "<input>", max_recursion_depth: int = 120):
         self.globals = Environment()
         for name, value in ENGINE_GLOBALS.items():
             self.globals.define(name, value)

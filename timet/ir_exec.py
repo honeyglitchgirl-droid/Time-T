@@ -271,7 +271,7 @@ def _safe_mod(a, b):
 
 
 class IRExecutor:
-    def __init__(self, program: TirProgram, stdout_write=None, max_call_depth: int = 1000):
+    def __init__(self, program: TirProgram, stdout_write=None, max_call_depth: int = 120):
         self.program = program
         self.functions = program.function_table()
         self.stdout_write = stdout_write or (lambda s: print(s))

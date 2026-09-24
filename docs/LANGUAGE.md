@@ -17,12 +17,18 @@ implemented — see ROADMAP.md.
 
 ## 2. Types
 
-Primitive: `Int`, `Float`, `Bool`, `String`, `Unit`
+Primitive: `Int` (arbitrary-precision in interpreter/IR engines; 64-bit two's-complement `int64_t` in native C compilation), `Float` (IEEE 754 64-bit double), `Bool`, `String`, `Unit`
 Tensor: `Tensor[f32]`, `Tensor[f64]`, `Tensor[i32]`, `Tensor[i64]`,
 `Tensor[bool]` — rank/shape are **not** part of the static type (checked at
 runtime); this mirrors §7's explicit permission to keep shape typing
 optional.
 Function type (inferred, not user-written yet): `(T1, T2) -> R`
+
+### Integer Width & Arithmetic Semantics
+Time-T follows **Option A (Arbitrary Precision with Native 64-bit Mapping)**:
+- In the reference AST Interpreter and IR Executor, scalar `Int` values provide unbounded arbitrary-precision integer arithmetic without overflow truncation.
+- In the Native C11 Emitter (`time-t build`), `Int` is mapped to `int64_t` (two's-complement 64-bit signed integer) for maximum execution speed, with modulo operations implementing Python-semantic floor modulo (`tt_mod`).
+- In Tensor buffers (`Tensor[i32]`, `Tensor[i64]`), explicit fixed-width contiguous arrays are enforced for memory efficiency and hardware alignment.
 
 ## 3. Bindings
 

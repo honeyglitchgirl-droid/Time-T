@@ -1,11 +1,11 @@
 # Time-T v2.1.0 Final Release Checklist
 
 - [x] Version metadata synchronized across `timet/__init__.py`, `docs/CHANGELOG.md`, `README.md`, and CLI (`2.1.0`).
-- [x] README synchronized: current version `2.1.0`, test count `497`, example count `16`.
+- [x] README synchronized: current version `2.1.0`, test count `500`, example count `16`.
 - [x] Changelog synchronized with v2.1.0 release notes and historical logs preserved.
-- [x] Test count synchronized across all documentation (`497 passed, 0 failed`).
+- [x] Test count synchronized across all documentation (`500 passed, 0 failed`).
 - [x] Example count synchronized (`16 runnable examples`).
-- [x] Full test suite completed (`497 passed in 11.35s`).
+- [x] Full test suite completed (`500 passed in 11.35s`).
 - [x] No unresolved test failures (0 failed, 0 errors).
 - [x] Expected skips documented (0 skipped; 100% execution).
 - [x] CLI verified: all 12 subcommands respond to `--help` and execution.

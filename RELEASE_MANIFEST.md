@@ -2,9 +2,9 @@
 
 - **Release Archive**: `time-t-2.1.0.tar.gz`
 - **Version**: `2.1.0`
-- **Archive Size**: `218979` bytes
-- **SHA-256 Checksum**: `0cc4a28a2df049e4002ad10d974409cc3911f11864f91390f7122aa6a88c0d06`
-- **Build Timestamp**: 2026-09-24T12:15:00Z
+- **Archive Size**: `220026` bytes
+- **SHA-256 Checksum**: `3ed0f4e29ad7d6855621af58740f1d55ee7a5bb1b32ac958db60e26b8262d2eb`
+- **Build Timestamp**: 2026-09-24T12:40:00Z
 - **Target Git Branch**: `arena/01a0d0a9-time-t`
 
 ## Archive Verification Command
@@ -15,14 +15,14 @@ sha256sum time-t-2.1.0.tar.gz
 
 Expected output:
 ```text
-0cc4a28a2df049e4002ad10d974409cc3911f11864f91390f7122aa6a88c0d06  time-t-2.1.0.tar.gz
+3ed0f4e29ad7d6855621af58740f1d55ee7a5bb1b32ac958db60e26b8262d2eb  time-t-2.1.0.tar.gz
 ```
 
 ## Archive Contents
 - Core compiler & runtime (`timet/`)
 - CLI launcher executable with 0755 permissions (`bin/time-t`)
 - 16 runnable examples (`examples/`)
-- 37 test suites with 497 unit & differential tests (`tests/`)
+- 38 test suites with 500 unit & differential tests (`tests/`)
 - Documentation specifications & binding design decisions (`docs/`)
 - Hardware validation plans (`hardware/`)
 - Stability stress suite (`tools/stress_test.py`)

@@ -133,3 +133,20 @@ def test_cli_clean_error_on_missing_file():
     assert res.returncode == 1
     assert "error: file not found:" in res.stderr
     assert "Traceback" not in res.stderr
+
+
+def test_cli_generic_exception_handler_without_debug():
+    """Verify CLI handles exceptions cleanly when TIMET_DEBUG is unset."""
+    import os
+    env = dict(os.environ)
+    env.pop("TIMET_DEBUG", None)
+    res = subprocess.run(
+        [sys.executable, "-m", "timet", "run", "non_existent_dummy_file.tt"],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert res.returncode == 1
+    assert "error: file not found:" in res.stderr
+    assert "NameError" not in res.stderr

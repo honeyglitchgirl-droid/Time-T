@@ -492,7 +492,17 @@ class Tensor:
         return self._make_result(result, [self], backward_fn, "broadcast_to")
 
     def __getitem__(self, key):
-        result = self.data[key]
+        try:
+            result = self.data[key]
+        except IndexError as e:
+            raise TensorError(
+                code="E0405",
+                message="tensor index out of bounds",
+                stage="tensor",
+                expected=f"valid index for tensor of shape {self.shape}",
+                actual=f"index {key}",
+                note=str(e),
+            )
         in_shape = self.shape
 
         def backward_fn(g):
@@ -501,6 +511,10 @@ class Tensor:
             return (full,)
 
         return self._make_result(np.asarray(result), [self], backward_fn, "index")
+
+    def __iter__(self):
+        for i in range(len(self.data)):
+            yield self[i]
 
     # ---------------- comparisons (non-differentiable) ----------------
 

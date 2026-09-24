@@ -80,3 +80,43 @@ def test_recursion_depth_ir_diagnostic():
     with pytest.raises(IrExecError) as exc_info:
         ex.run()
     assert exc_info.value.code == "E0509"
+
+
+def test_recursion_parity_ast_and_ir():
+    """Verify AST interpreter and IR executor both reject excessive recursion at the same threshold with E0509."""
+    from timet.interpreter import run_source
+    from timet.parser import parse
+    from timet.typechecker import check
+    from timet.ir import lower_program
+    from timet.ir_exec import run_program
+    from timet.diagnostics import Diagnostic
+
+    code = """
+fn rec(x: Int) -> Int {
+    if x <= 0 { return 0 }
+    return 1 + rec(x - 1)
+}
+fn main() {
+    print(rec(150))
+}
+"""
+    # AST
+    ast_caught = False
+    try:
+        run_source(code)
+    except Diagnostic as e:
+        assert e.code == "E0509"
+        ast_caught = True
+    assert ast_caught, "AST interpreter must catch recursion depth with E0509"
+
+    # IR
+    ir_caught = False
+    p = parse(code)
+    check(p)
+    tir = lower_program(p)
+    try:
+        run_program(tir)
+    except Diagnostic as e:
+        assert e.code == "E0509"
+        ir_caught = True
+    assert ir_caught, "IR executor must catch recursion depth with E0509"
