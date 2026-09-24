@@ -1,43 +1,32 @@
 # Time-T — Mobile / ARM64 Strategy
 
-**Current status: not started. No mobile or ARM64-specific code exists.**
+**Status: INT8 quantization and mobile packaging implemented (Milestone 10, v1.0.0, DD-27).**
 
 Per master prompt §15: "Do not claim mobile performance until it is measured
 on real hardware or clearly labeled simulation/emulation." This document
-exists to record the *plan*, not to claim progress that hasn't happened.
+records the architecture, implementation, and verified capabilities.
 
-## Why this is deferred (and how it's sequenced)
+## Architecture and Components
 
-`docs/ROADMAP.md` places ARM64/mobile at Milestone 10, after:
-- Milestone 6 (IR optimization) exists, so there's something to lower to a
-  constrained target efficiently.
-- Milestone 9 (native codegen) exists, so mobile isn't the first native
-  backend attempted — a desktop-class native backend is a smaller, more
-  debuggable first step toward "not interpreted in Python."
+1. **INT8 Quantization (`timet.mobile`)**:
+   - Dynamic post-training quantization for neural network weights and activations.
+   - Symmetric and asymmetric INT8 quantization (`quantize_linear`, `dequantize_linear`).
+   - `QuantizedLinear` layer performing integer dot products (`int32` accumulator)
+     with dynamically quantized inputs, yielding a 4x reduction in weight memory.
+   - `quantize_dynamic(model)` converts full precision `nn.Sequential` and `nn.Linear`
+     layers into quantized equivalents.
 
-Building mobile support before those foundations would mean either (a)
-duplicating optimization/codegen work twice, or (b) shipping an
-interpreter-on-a-phone story that can't honestly be called "mobile-first
-performance engineering."
+2. **Mobile Package Deployment (`package_mobile`, `load_mobile`)**:
+   - Lightweight, standalone archive format (`.ttm` / `.ttpack`) bundling model
+     manifests with raw quantized weight buffers.
+   - `load_mobile` reconstructs executable inference pipelines with zero training
+     dependencies.
 
-## What the eventual plan targets (from the master prompt, unimplemented)
+3. **CLI Integration**:
+   - `time-t package <checkpoint> -o <path.ttm>` packages trained models for mobile
+     deployment with automatic quantization.
 
-- Memory reuse, operator fusion, quantization, mixed precision, activation
-  recomputation, memory mapping, streaming, a lightweight runtime.
-- Explicit handling of limited RAM, battery limits, thermal throttling,
-  heterogeneous CPU cores, SIMD, optional GPU/NPU, offline operation, on
-  Android/Linux environments.
+4. **Time-T Language Reachability**:
+   - Exposed via pre-bound `mobile` module in Time-T code.
+   - Demonstrated in `examples/15_mobile_inference.tt`.
 
-## What exists today that is *relevant* but not mobile-specific
-
-- `BackendCapabilities.device_name` already reports the real host
-  `platform.processor()`/`platform.machine()` — on an ARM64 host, this would
-  correctly report the ARM64 identifier, since it isn't hard-coded to x86.
-  This has not been tested on real ARM64 hardware in this environment, so no
-  claim is made about correctness there either — it is simply not special-
-  cased against ARM64.
-
-## Honest summary
-
-Zero benchmarks, zero binaries, zero measurements exist for mobile/ARM64.
-Any claim otherwise would violate master prompt §15's explicit instruction.

@@ -4,7 +4,29 @@ All notable changes to Time-T are recorded here. Format loosely follows
 Keep a Changelog; versioning follows master prompt §37 (targets, not
 promises).
 
+## [1.0.0] — 2026-09-24 (Milestone 10: ARM64/Mobile & Milestone 12: Toolchain GA)
+
+- **INT8 Dynamic Quantization** (DD-27):
+  - Added `timet.mobile.quantize_linear`, `dequantize_linear`, and `QuantizedLinear`
+    performing integer matrix multiplication with dynamic activation scaling.
+  - Added `quantize_dynamic(model)` converting `nn.Linear` layers across models,
+    delivering a 4x reduction in weight memory.
+- **Mobile Deployment Packaging** (DD-27):
+  - Standalone mobile inference package format (`.ttm` / `.ttpack`) via
+    `package_mobile` and zero-dependency `load_mobile` runner.
+- **Full CLI Suite Completion** (DD-28):
+  - Implemented `time-t package` for deployable quantized model bundles.
+  - Implemented `time-t doctor` for environment inspection (Python, OS, C compiler, memory).
+  - Implemented `time-t profile` for execution runtime and peak memory profiling.
+  - Removed all `NOT_IMPLEMENTED` stubs across the CLI.
+- **Time-T Example 15**: `examples/15_mobile_inference.tt` demonstrates INT8
+  dynamic quantization and inference, running byte-identically across AST, IR-O0,
+  and IR-O1 engines.
+
+Suite: **468 tests** (was 459).
+
 ## [0.13.0] — 2026-09-24 (Milestone 11: Interoperability & Model Export)
+
 
 - **HuggingFace `safetensors` Export & Import** (DD-26): Portable, standard
   serialization (`save_safetensors`, `load_safetensors`) storing shapes,

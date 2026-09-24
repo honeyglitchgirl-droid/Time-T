@@ -1,0 +1,22 @@
+// Example 15: Mobile INT8 Dynamic Quantization and Inference
+// Demonstrates quantizing a trained model and executing lightweight inference.
+fn main() {
+    let x = [[1.0, 2.0, 3.0, 4.0], [-1.0, 0.5, 1.5, -2.0]]
+    let float_model = nn.Sequential(
+        nn.Linear(4, 8),
+        nn.GELU(),
+        nn.Linear(8, 2)
+    )
+
+    let y_float = float_model(x)
+
+    // Quantize model dynamically to INT8 (weights stored as int8, 4x memory reduction)
+    let quant_model = mobile.quantize_dynamic(float_model)
+    let y_quant = quant_model(x)
+
+    // Verify inference produces valid tensor shapes and outputs
+    print(y_float.shape[0])
+    print(y_float.shape[1])
+    print(y_quant.shape[0])
+    print(y_quant.shape[1])
+}

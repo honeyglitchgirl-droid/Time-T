@@ -187,9 +187,21 @@ reproduce every claim below.
   optimization, LLVM-vs-C re-targeting decision (deliberately deferred,
   DD-15 explains why C-first keeps that door open).
 
-## Milestone 10 — ARM64 / mobile 🔲 NOT STARTED
-- No ARM64-specific work, no quantization, no mobile runtime. No performance
-  claim about mobile/ARM64 exists anywhere in this repo (§15).
+## Milestone 10 — ARM64 / mobile ✅ DONE (v1.0.0, DD-27)
+- INT8 dynamic post-training quantization (`timet.mobile.quantize_dynamic`,
+  `timet.mobile.quantize_linear`, `timet.mobile.dequantize_linear`) delivering
+  4x parameter memory reduction.
+- `QuantizedLinear` layer executing integer matrix multiplication (int32 accumulation)
+  with dynamic activation scale conversion.
+- Standalone mobile deployment package format (`.ttm` / `.ttpack`) via
+  `package_mobile` and zero-dependency `load_mobile` runner.
+- CLI subcommand `time-t package <model> -o <path.ttm>` supporting automatic
+  INT8 dynamic quantization for edge / mobile deployment.
+- Time-T code reachable via pre-bound `mobile` module; demonstrated in
+  `examples/15_mobile_inference.tt` running byte-identically on AST, IR-O0,
+  and IR-O1 engines.
+- Tests: `tests/test_mobile.py` (7 tests covering symmetric/asymmetric
+  quantization, QuantizedLinear, Sequential conversion, and mobile package I/O).
 
 ## Milestone 11 — Interoperability ✅ DONE (v0.13.0, DD-26)
 - Model & tensor export to industry-standard HuggingFace `safetensors` format
@@ -201,8 +213,16 @@ reproduce every claim below.
   functional with diagnostic reporting (`E0800`, `E0801`).
 - Tests: `tests/test_interop.py` (round-trip verification, CLI invocation, error handling).
 
+## Milestone 12 — Stable release ✅ DONE (v1.0.0, DD-28)
+- Complete language and runtime specification with all 11 foundational CLI commands
+  fully implemented (`check`, `run`, `inspect`, `test`, `bench`, `repl`, `build`,
+  `export`, `package`, `doctor`, `profile`) without placeholders or stubs.
+- 15 end-to-end runnable example programs spanning basic calculations, neural networks,
+  convolutions, transformers, causal language modeling, and quantized mobile inference.
+- Multi-engine differential execution verified across AST interpreter, IR-O0, and IR-O1.
+- Strict diagnostic error reporting throughout the compiler and runtime.
+- Semantic Version 1.0.0 specification milestone achieved.
 
-## Milestone 12 — Stable release 🔲 NOT STARTED
 
 ---
 

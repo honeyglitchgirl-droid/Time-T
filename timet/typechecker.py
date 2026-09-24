@@ -67,7 +67,8 @@ BUILTIN_FUNCS = {
 #: Names pre-bound to host modules by the engine (interpreter and IR
 #: executor). Members are accessed dynamically, so anything reached through
 #: them is currently typed TUnknown (documented in docs/LANGUAGE.md DD-10).
-BUILTIN_MODULES = {"nn", "optim", "train"}
+BUILTIN_MODULES = {"nn", "optim", "train", "mobile"}
+
 
 
 def _resolve_type_expr(te: A.TypeExpr) -> Type:

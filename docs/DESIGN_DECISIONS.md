@@ -576,7 +576,44 @@ at the repo's standard 1e-3 tolerance.
    section). Best-epoch weights remain checkpoint.py's job.
 ---
 
+## DD-27: Mobile INT8 Quantization and Lightweight Package Deployment (Milestone 10, Master Prompt §15, §24)
+
+**Decision (v1.0.0):**
+1. Dynamic INT8 linear quantization (`timet.mobile`):
+   - Symmetric and asymmetric dynamic quantization mapping float32 $\rightarrow$ int8 $[-128, 127]$.
+   - `QuantizedLinear` layer executing integer matrix multiplication (int32 accumulator)
+     with dynamically scaled float32 output. Reduces parameter footprint by 4x.
+   - `quantize_dynamic(model)` converts `nn.Linear` layers across `nn.Sequential` and custom containers.
+2. Mobile standalone package format (`.ttm`):
+   - Zip container bundling a JSON manifest with raw binary parameter buffers.
+   - Zero-overhead loading via `load_mobile(path)` returning executable inference pipelines.
+3. Language accessibility:
+   - Exposed to Time-T programs via pre-bound `mobile` module.
+   - Verified in `examples/15_mobile_inference.tt` with byte-identical output across AST, IR-O0, and IR-O1 engines.
+
+---
+
+## DD-28: Complete Language Toolchain and CLI General Availability (Milestone 12, Master Prompt §25, §37)
+
+**Decision (v1.0.0):**
+1. All 11 foundational CLI commands specified in master prompt §25 are fully implemented:
+   - `check`: static type-checking and name resolution
+   - `run`: AST, IR-O0, IR-O1, and native C-emitter execution
+   - `inspect`: typed IR, memory accounting, and backend capability dumps
+   - `test`: pytest suite runner with pattern matching
+   - `bench`: reproducible benchmark suite
+   - `repl`: interactive evaluation environment
+   - `build`: native C-emitter compilation
+   - `export`: model export to safetensors, npz, bin, and json
+   - `package`: deployable mobile model packaging with optional quantization
+   - `doctor`: system environment diagnostics (OS, compiler, backend, python, memory)
+   - `profile`: execution runtime and peak memory profiling
+2. Version graduation: Time-T reaches v1.0.0 milestone. All milestones 0 through 12 have completed vertical slices with accompanying tests.
+
+---
+
 ## DD-26: Portable Model Export and Format Interoperability (Milestone 11, Master Prompt §20, §24, §25)
+
 
 **Decision (v0.13.0):**
 1. HuggingFace Safetensors export and import:

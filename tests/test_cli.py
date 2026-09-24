@@ -58,12 +58,20 @@ def test_inspect_backend_json():
     assert payload["backend"]["name"] == "cpu-numpy"
 
 
-def test_not_implemented_commands_report_honestly():
-    for cmd in ("profile", "package", "doctor"):
-        proc = run_cli(cmd, "--json")
-        payload = json.loads(proc.stdout)
-        assert payload["status"] == "not_implemented"
-        assert proc.returncode == 2
+def test_cli_package_and_doctor_and_profile():
+    res_doc = run_cli("doctor", "--json")
+    assert res_doc.returncode == 0
+    d_meta = json.loads(res_doc.stdout)
+    assert d_meta["status"] == "ok"
+    assert d_meta["c_compiler"] in ("gcc", "cc", "clang", "none")
+
+    res_prof = run_cli("profile", "examples/01_hello_world.tt", "--json")
+    assert res_prof.returncode == 0
+    p_meta = json.loads(res_prof.stdout)
+    assert p_meta["status"] == "ok"
+    assert "elapsed_seconds" in p_meta
+
+
 
 
 

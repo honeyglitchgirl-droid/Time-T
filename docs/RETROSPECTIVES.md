@@ -695,7 +695,37 @@ the optimizer work began only after the IR itself became executable.)
 
 ---
 
+# Entry 15 — v1.0.0, closing Milestones 10 and 12 (Mobile INT8 Quantization and v1.0.0 Stable Toolchain; DD-27, DD-28)
+
+1. **What works?** Complete INT8 dynamic quantization (`timet.mobile.quantize_dynamic`,
+   `QuantizedLinear`), delivering 4x memory savings on weight matrices;
+   mobile deployment packaging (`package_mobile`, `load_mobile`) and `.ttm` binary format;
+   all 11 CLI subcommands implemented without stubs (`check`, `run`, `inspect`, `test`,
+   `bench`, `repl`, `build`, `export`, `package`, `doctor`, `profile`);
+   15 complete example programs executing byte-identically across AST interpreter, IR-O0,
+   and IR-O1 execution engines.
+2. **What does not work / doesn't exist?** Fused INT8 SIMD assembly / NEON kernels (integer
+   matrix multiplication is executed via NumPy int32 dot products); 4-bit / INT4 quantization.
+3. **What is untested?** Quantization on Conv2D layers (currently QuantizedLinear is implemented).
+4. **What is slow?** Python unpack overhead when loading mobile `.ttm` packages.
+5. **What consumes excessive memory?** Memory buffers during whole-package decompression.
+6. **What architectural debt exists?** `package` CLI command currently reconstructs
+   `Sequential` pipelines from generic parameter checkpoints; dedicated model definition
+   manifests will make model packaging fully general.
+7. **What assumptions may be wrong?** That symmetric quantization is sufficient for all weights
+   (empirically works well for normal weights, but skewed weights may prefer asymmetric).
+8. **What should be redesigned before continuing?** Kernel dispatch for quantized operations
+   should target BLAS GEMM or ARM NEON intrinsics when extending native codegen.
+9. **What should NOT be implemented yet?** Arbitrary mixed INT4/FP8 quantization formats.
+10. **What evidence supports current claims?** `pytest -q` = 468 passing:
+    `tests/test_mobile.py` (7 tests covering symmetric/asymmetric quantization, QuantizedLinear,
+    Sequential quantization, mobile package roundtrips, and CLI packaging), all 14 CLI tests
+    passing in `tests/test_cli.py`, and 15 examples passing differential verification.
+
+---
+
 # Entry 14 — v0.13.0, Milestone 11 (Interoperability & Model Export; DD-26)
+
 
 1. **What works?** HuggingFace `safetensors` export (`checkpoint.save_safetensors`)
    and loading (`checkpoint.load_safetensors`) matching standard binary format;

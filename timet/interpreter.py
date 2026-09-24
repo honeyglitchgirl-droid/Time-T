@@ -15,10 +15,12 @@ from timet import train as train_lib
 from timet.autodiff import no_grad
 from timet.diagnostics import Diagnostic, SourceSpan
 from timet.modules import ModuleLoader, ModuleError, ModuleValue
+from timet import mobile as mobile_lib
 
 #: Module objects pre-bound in every program's global scope (DD-10). They
 #: are ordinary values, so `nn.Linear(2, 8)` is a field access + call.
-ENGINE_GLOBALS = {"nn": nn_lib, "optim": optim_lib, "train": train_lib}
+ENGINE_GLOBALS = {"nn": nn_lib, "optim": optim_lib, "train": train_lib, "mobile": mobile_lib}
+
 
 
 class RuntimeErr(Diagnostic):
