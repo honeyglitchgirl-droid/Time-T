@@ -798,10 +798,24 @@ def binary_cross_entropy(pred: Tensor, target: Tensor) -> Tensor:
 
 
 def gelu(x: Tensor) -> Tensor:
-    """Gaussian Error Linear Unit functional op."""
+    """Gaussian Error Linear Unit functional op (native JIT accelerated when available)."""
+    from timet.jit_kernels import fast_gelu, has_fast_kernels
+    if has_fast_kernels() and x.data.dtype == np.float32 and x.data.flags["C_CONTIGUOUS"]:
+        out = fast_gelu(x.data)
+        c = float(math.sqrt(2.0 / math.pi))
+        def backward_fn(g):
+            xd = x.data
+            inner = c * (xd + 0.044715 * xd * xd * xd)
+            tanh_inner = np.tanh(inner)
+            dtanh = 1.0 - tanh_inner * tanh_inner
+            dinner = c * (1.0 + 3.0 * 0.044715 * xd * xd)
+            dx = 0.5 * (1.0 + tanh_inner) + 0.5 * xd * dtanh * dinner
+            return (g * dx,)
+        return x._make_result(out, [x], backward_fn, "gelu")
     c = float(math.sqrt(2.0 / math.pi))
     inner = (x + (x * x * x) * 0.044715) * c
     return (x * 0.5) * (inner.tanh() + 1.0)
+
 
 
 def rms_norm(x: Tensor, weight: Optional[Tensor] = None, eps: float = 1e-6) -> Tensor:

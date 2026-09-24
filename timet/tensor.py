@@ -285,8 +285,10 @@ class Tensor:
         return self._unop(np.sqrt, lambda g, x, y: g * 0.5 / y, "sqrt")
 
     def relu(self):
-        return self._unop(lambda x: np.maximum(x, 0),
-                           lambda g, x, y: g * (x > 0), "relu")
+        from timet.jit_kernels import fast_relu, has_fast_kernels
+        fwd = fast_relu if has_fast_kernels() else (lambda x: np.maximum(x, 0))
+        return self._unop(fwd, lambda g, x, y: g * (x > 0), "relu")
+
 
     def sigmoid(self):
         def fwd(x):
