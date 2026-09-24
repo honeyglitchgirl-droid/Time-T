@@ -71,6 +71,13 @@ def test_cli_package_and_doctor_and_profile():
     assert p_meta["status"] == "ok"
     assert "elapsed_seconds" in p_meta
 
+    res_ver = run_cli("verify", "examples/01_hello_world.tt", "--json")
+    assert res_ver.returncode == 0
+    v_meta = json.loads(res_ver.stdout)
+    assert v_meta["status"] == "ok"
+    assert v_meta["certified_identical"] is True
+
+
 
 
 

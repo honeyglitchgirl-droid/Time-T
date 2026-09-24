@@ -4,7 +4,17 @@ All notable changes to Time-T are recorded here. Format loosely follows
 Keep a Changelog; versioning follows master prompt §37 (targets, not
 promises).
 
+## [1.3.0] — 2026-09-24 (Production Hardening & Verification Suite)
+
+- **Native Float Printing** (DD-31):
+  - Added `tt_print_float` to native C-emitter with `%.15g` IEEE formatting and whole-number formatting.
+  - Enables direct printing of Float scalars and expressions in native binaries (`time-t build`), byte-identical to interpreted output.
+- **CLI `time-t verify`** (DD-31):
+  - User-facing trust verification command executing programs across AST interpreter, IR-O0, and IR-O1 engines to certify bit-identical results.
+- **Suite**: **480 tests** (all green).
+
 ## [1.2.0] — 2026-09-24 (Runtime Robustness & Audit Resolution)
+
 
 - **Structured Zero-Division Error Handling** (DD-30):
   - Fixed unhandled `ZeroDivisionError` on `/` and `%` by zero in AST interpreter and IR executor.

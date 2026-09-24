@@ -371,7 +371,59 @@ def cmd_doctor(args) -> int:
     return 0
 
 
+def cmd_verify(args) -> int:
+    """Run program across AST interpreter, IR-O0, and IR-O1 to certify bit-identical outputs."""
+    src = _read(args.file)
+    program = parse(src, args.file)
+    loader = _fresh_loader()
+    check(program, filename=args.file, loader=loader)
+
+    # Engine 1: AST interpreter
+    ast_out = []
+    interp = Interpreter(stdout_write=ast_out.append, loader=loader, importer_path=args.file)
+    interp.run(program)
+
+    # Engine 2: IR unoptimized
+    from timet.ir_exec import run_program
+    tir0 = lower_program(program, loader=loader, importer_path=args.file)
+    ir0_out = []
+    run_program(tir0, stdout_write=ir0_out.append)
+
+    # Engine 3: IR optimized (-O1)
+    from timet.optimize import optimize_program
+    tir1, _ = optimize_program(lower_program(program, loader=loader, importer_path=args.file), level=1)
+    ir1_out = []
+    run_program(tir1, stdout_write=ir1_out.append)
+
+    ok = (ast_out == ir0_out == ir1_out)
+    payload = {
+        "status": "ok" if ok else "mismatch",
+        "file": args.file,
+        "certified_identical": ok,
+        "ast_lines": len(ast_out),
+        "ir_o0_lines": len(ir0_out),
+        "ir_o1_lines": len(ir1_out),
+    }
+    if not ok:
+        payload["diff"] = {
+            "ast": ast_out,
+            "ir_o0": ir0_out,
+            "ir_o1": ir1_out,
+        }
+
+    if args.json:
+        print(json.dumps(payload))
+    else:
+        if ok:
+            print(f"VERIFIED [3/3 ENGINES]: {args.file}")
+            print(f"  AST Interpreter == IR-O0 == IR-O1 (exact match, {len(ast_out)} output lines)")
+        else:
+            print(f"FAILED VERIFICATION: {args.file} produced differing outputs across engines!", file=sys.stderr)
+    return 0 if ok else 1
+
+
 def cmd_build(args) -> int:
+
 
     """Native compilation via the C-emitter slice (Milestone 9, DD-15).
     On subset violations, fails with an honest, machine-readable diagnostic
@@ -504,7 +556,13 @@ def build_parser() -> argparse.ArgumentParser:
     add_json_flag(sp)
     sp.set_defaults(func=cmd_repl)
 
+    sp = sub.add_parser("verify", help="certify bit-identical execution across AST, IR-O0, and IR-O1 engines")
+    sp.add_argument("file", help="input .tt program to verify across engines")
+    add_json_flag(sp)
+    sp.set_defaults(func=cmd_verify)
+
     sp = sub.add_parser("build", help="native-compile a .tt file to an executable (v1 C-emitter subset, DD-15)")
+
     sp.add_argument("file")
     sp.add_argument("-o", "--output", default=None)
     sp.add_argument("--cc", default=None, help="C compiler to use (default: first of gcc/cc/clang on PATH)")

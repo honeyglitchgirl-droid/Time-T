@@ -128,8 +128,10 @@ def _rejects(src: str, needle: str):
     assert "native:" in str(e.value) and needle in str(e.value)
 
 
-def test_rejects_float_print():
-    _rejects("fn main() { print(1.5) }", "printing Float")
+def test_supports_float_print():
+    ast, native = run_both("fn main() { print(1.5)\nprint(2.0)\nprint(-0.5) }")
+    assert ast == native == ["1.5", "2.0", "-0.5"]
+
 
 
 def test_rejects_tensors():

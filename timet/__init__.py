@@ -3,7 +3,8 @@
 See docs/ARCHITECTURE.md for what is actually implemented vs. planned.
 """
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
+
 
 
 

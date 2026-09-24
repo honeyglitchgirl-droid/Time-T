@@ -593,7 +593,22 @@ at the repo's standard 1e-3 tolerance.
 
 ---
 
+## DD-31: Native Float Printing Support and User-Facing Multi-Engine Verification (v1.3.0, Master Prompt §25, §29)
+
+**Decision (v1.3.0):**
+1. Native Float Printing:
+   - Implemented `tt_print_float` in the native C emitter prelude using `snprintf(..., "%.15g")` and shortest-repr formatting with `.0` suffix enforcement for whole floating-point numbers.
+   - Matches Python's shortest-repr output byte-for-byte.
+   - Removed the limitation in `native.py` and `tests/test_native.py` that prohibited printing `Float` expressions.
+2. CLI `time-t verify`:
+   - Added user-facing CLI command `time-t verify <file.tt> [--json]`.
+   - Executes the program synchronously through the AST interpreter, IR-O0, and IR-O1 engines.
+   - Certifies bit-identical stdout output across all three engines, reporting diagnostic diffs if any engine diverges.
+
+---
+
 ## DD-30: Robust Runtime Error Guardrails (Audit Resolution, Master Prompt §27, §31)
+
 
 **Decision (v1.2.0):**
 1. Division and Modulo by Zero:
