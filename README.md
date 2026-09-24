@@ -8,7 +8,7 @@ then expansion in tested layers. **Nothing in this repository is claimed to
 work unless it is backed by a passing test.**
 
 - **Current version**: `2.1.0`
-- **Current test inventory**: 500 automated tests across all subsystems with 100% pass rate
+- **Current test inventory**: 503 automated tests across all subsystems with 100% pass rate
 - **Current example inventory**: 16 runnable example programs with byte-exact verification
 
 ## What exists today (v2.1.0)
@@ -60,7 +60,7 @@ work unless it is backed by a passing test.**
   `verify` (multi-engine differential validator),
   `export` (safetensors/npz/bin/json), `package` (mobile bundle), `doctor` (toolchain diagnostics),
   and `profile` (runtime & peak memory profiling).
-- 500 automated tests across all subsystems with 100% pass rate.
+- 503 automated tests across all subsystems with 100% pass rate.
 - 16 runnable example programs with byte-exact expected output (`examples/*.tt` + `examples/*.expected`).
 - A real (not fabricated) benchmark harness with results written to
   `benchmarks/results/*.json`, labeled with the actual host CPU/platform.

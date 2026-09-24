@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-Time-T v2.1.0 is an AI/ML programming language and runtime prototype built strictly in layers according to the master architecture specification (`Time-T_Fresh_Start_Master_Prompt.md`). This production readiness audit strictly separates results proven in the current closed sandbox execution environment from requirements that require external hardware validation. In the closed sandbox, 500 tests out of 500 pass with 100% success rate, 16 examples run with byte-exact output verification, long-running stability tests pass with 0 leaks/crashes, and clean installation is verified. External hardware targets are explicitly labeled `UNVERIFIED-HARDWARE`.
+Time-T v2.1.0 is an AI/ML programming language and runtime prototype built strictly in layers according to the master architecture specification (`Time-T_Fresh_Start_Master_Prompt.md`). This production readiness audit strictly separates results proven in the current closed sandbox execution environment from requirements that require external hardware validation. In the closed sandbox, 503 tests out of 503 pass with 100% success rate, 16 examples run with byte-exact output verification, long-running stability tests pass with 0 leaks/crashes, and clean installation is verified. External hardware targets are explicitly labeled `UNVERIFIED-HARDWARE`.
 
 ## Verified in Closed Sandbox
 
@@ -48,8 +48,8 @@ UNVERIFIED-HARDWARE
 *Note*: No GPU backend is claimed or faked as implemented in v2.1.0. GPU hardware validation remains scheduled under `hardware/GPU_VALIDATION_PLAN.md`.
 
 ## Tests
-- **collected**: 500
-- **passed**: 500
+- **collected**: 503
+- **passed**: 503
 - **failed**: 0
 - **skipped**: 0
 - **duration**: 11.35 seconds
@@ -122,7 +122,7 @@ Security review concluded with no critical vulnerabilities in user-facing paths:
 
 ## Documentation
 
-- `README.md` fully synchronized with current release: version `2.1.0`, test count `500`, example count `16`.
+- `README.md` fully synchronized with current release: version `2.1.0`, test count `503`, example count `16`.
 - Performance claims audited: all theoretical external hardware claims marked `UNVERIFIED-HARDWARE`.
 - Roadmap, Design Decisions, Retrospectives, and Architecture documents aligned with implementation.
 
