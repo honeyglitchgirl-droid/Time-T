@@ -811,7 +811,7 @@ No internal document can substitute for these forms of evidence.
 | Documentation consistency | Some stale claims/counts | FAIL |
 | Integer semantics | Behavior exists, contract unclear | FAIL/PARTIAL |
 | CPU x86_64 | Validated | PASS |
-| Android ARM64 | Not independently validated here | UNVERIFIED |
+| Android ARM64 | Physical execution in Termux (500/500 passed, native build, stress test) | VERIFIED |
 | GPU | Not independently validated here | UNVERIFIED |
 | External security audit | Not performed | UNVERIFIED |
 | Long-term production track record | Not established | UNVERIFIED |
@@ -925,7 +925,7 @@ DOCUMENTED TEST FILES: 37
 RELEASE TAR CHECKSUM: VERIFIED
 RELEASE TAR EXECUTABLE: VERIFIED
 CPU x86_64 VALIDATION: VERIFIED
-ANDROID ARM64: UNVERIFIED
+ANDROID ARM64: VERIFIED
 GPU: UNVERIFIED
 EXTERNAL SECURITY REVIEW: NOT PERFORMED
 ```
